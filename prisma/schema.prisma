@@ -1,0 +1,178 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Person {
+  id                  String   @id @default(uuid())
+  firstName           String   @map("first_name")
+  lastName            String?  @map("last_name")
+  maidenName          String?  @map("maiden_name")
+  nickname            String?
+  gender              String?
+
+  dateOfBirth         String?  @map("date_of_birth")
+  dateOfBirthApprox   Boolean  @default(false) @map("date_of_birth_approx")
+  placeOfBirth        String?  @map("place_of_birth")
+  dateOfDeath         String?  @map("date_of_death")
+  dateOfDeathApprox   Boolean  @default(false) @map("date_of_death_approx")
+  placeOfDeath        String?  @map("place_of_death")
+  isLiving            Boolean  @default(true) @map("is_living")
+
+  biography           String?
+  occupation          String?
+  education           String?
+  religion            String?
+  denomination        String?
+
+  email               String?
+  phone               String?
+  currentCity         String?  @map("current_city")
+  currentState        String?  @map("current_state")
+  currentCountry      String?  @map("current_country")
+
+  photoUrl            String?  @map("photo_url")
+
+  birthLatitude       Float?   @map("birth_latitude")
+  birthLongitude      Float?   @map("birth_longitude")
+  currentLatitude     Float?   @map("current_latitude")
+  currentLongitude    Float?   @map("current_longitude")
+
+  generation          Int?
+  familySide          String?  @map("family_side")
+  birthOrder          Int?     @map("birth_order")
+
+  addedBy             String?  @map("added_by")
+  notes               String?
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  parentOf            ParentChild[] @relation("Parent")
+  childOf             ParentChild[] @relation("Child")
+  spouse1             Spouse[]      @relation("Spouse1")
+  spouse2             Spouse[]      @relation("Spouse2")
+  media               Media[]
+  eventPersons        EventPerson[]
+  narratedStories     Story[]       @relation("Narrator")
+
+  @@map("persons")
+}
+
+model ParentChild {
+  id           String   @id @default(uuid())
+  parentId     String   @map("parent_id")
+  childId      String   @map("child_id")
+  parentType   String   @map("parent_type")
+  isBiological Boolean  @default(true) @map("is_biological")
+  isAdopted    Boolean  @default(false) @map("is_adopted")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  parent       Person   @relation("Parent", fields: [parentId], references: [id], onDelete: Cascade)
+  child        Person   @relation("Child", fields: [childId], references: [id], onDelete: Cascade)
+
+  @@unique([parentId, childId])
+  @@map("parent_child")
+}
+
+model Spouse {
+  id            String   @id @default(uuid())
+  person1Id     String   @map("person1_id")
+  person2Id     String   @map("person2_id")
+  marriageDate  String?  @map("marriage_date")
+  marriagePlace String?  @map("marriage_place")
+  divorceDate   String?  @map("divorce_date")
+  isCurrent     Boolean  @default(true) @map("is_current")
+  marriageOrder Int      @default(1) @map("marriage_order")
+  notes         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  person1       Person   @relation("Spouse1", fields: [person1Id], references: [id], onDelete: Cascade)
+  person2       Person   @relation("Spouse2", fields: [person2Id], references: [id], onDelete: Cascade)
+
+  @@unique([person1Id, person2Id])
+  @@map("spouses")
+}
+
+model Media {
+  id         String   @id @default(uuid())
+  personId   String?  @map("person_id")
+  type       String
+  url        String
+  caption    String?
+  dateTaken  String?  @map("date_taken")
+  uploadedBy String?  @map("uploaded_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  person     Person?  @relation(fields: [personId], references: [id], onDelete: SetNull)
+
+  @@map("media")
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  type        String
+  eventDate   String?  @map("event_date")
+  location    String?
+  latitude    Float?
+  longitude   Float?
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  eventPersons EventPerson[]
+
+  @@map("events")
+}
+
+model EventPerson {
+  eventId  String @map("event_id")
+  personId String @map("person_id")
+  role     String?
+
+  event    Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, personId])
+  @@map("event_persons")
+}
+
+model Place {
+  id          String  @id @default(uuid())
+  name        String
+  type        String
+  address     String?
+  city        String?
+  state       String?
+  country     String?
+  latitude    Float?
+  longitude   Float?
+  description String?
+
+  @@map("places")
+}
+
+model Story {
+  id         String   @id @default(uuid())
+  title      String
+  content    String?
+  narratorId String?  @map("narrator_id")
+  tags       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  narrator   Person?  @relation("Narrator", fields: [narratorId], references: [id], onDelete: SetNull)
+
+  @@map("stories")
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
