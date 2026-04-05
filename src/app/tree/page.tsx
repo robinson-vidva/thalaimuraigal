@@ -1,10 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import dynamic from "next/dynamic";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
-
-const Tree = dynamic(() => import("react-d3-tree"), { ssr: false });
 
 interface TreeNode {
   name: string;
@@ -13,11 +10,142 @@ interface TreeNode {
   _id?: string;
 }
 
+interface LayoutNode {
+  node: TreeNode;
+  x: number;
+  y: number;
+  width: number;
+  children: LayoutNode[];
+}
+
+const CARD_W = 200;
+const CARD_H_SINGLE = 50;
+const CARD_H_SPOUSE = 70;
+const H_GAP = 40;
+const V_GAP = 40;
+
+function cardHeight(node: TreeNode): number {
+  return node.attributes?.spouse ? CARD_H_SPOUSE : CARD_H_SINGLE;
+}
+
+function layoutTree(node: TreeNode, depth: number): LayoutNode {
+  const children = (node.children || []).map((c) => layoutTree(c, depth + 1));
+
+  const totalChildWidth = children.reduce((sum, c, i) => sum + c.width + (i > 0 ? H_GAP : 0), 0);
+  const selfWidth = Math.max(CARD_W, totalChildWidth);
+
+  let childX = -totalChildWidth / 2;
+  for (const child of children) {
+    child.x = childX + child.width / 2;
+    childX += child.width + H_GAP;
+  }
+
+  return {
+    node,
+    x: 0,
+    y: depth * (CARD_H_SPOUSE + V_GAP),
+    width: selfWidth,
+    children,
+  };
+}
+
+function flattenNodes(layout: LayoutNode, offsetX: number, offsetY: number): { nodes: LayoutNode[]; lines: { x1: number; y1: number; x2: number; y2: number }[] } {
+  const absX = offsetX + layout.x;
+  const absY = offsetY + layout.y;
+  const h = cardHeight(layout.node);
+
+  const result: { nodes: LayoutNode[]; lines: { x1: number; y1: number; x2: number; y2: number }[] } = {
+    nodes: [{ ...layout, x: absX, y: absY }],
+    lines: [],
+  };
+
+  for (const child of layout.children) {
+    const childAbsX = absX + child.x;
+    const childAbsY = absY + layout.y + h + V_GAP - offsetY - layout.y;
+
+    // Line from parent bottom to child top
+    result.lines.push({
+      x1: absX,
+      y1: absY + h,
+      x2: absX + child.x,
+      y2: absY + h + V_GAP,
+    });
+
+    const sub = flattenNodes(child, absX, absY + h + V_GAP);
+    result.nodes.push(...sub.nodes);
+    result.lines.push(...sub.lines);
+  }
+
+  return result;
+}
+
+function TreeCard({ node, x, y }: { node: TreeNode; x: number; y: number }) {
+  const gender = node.attributes?.gender;
+  const hasSpouse = !!node.attributes?.spouse;
+  const h = cardHeight(node);
+  const accentColor = gender === "M" ? "#92400e" : gender === "F" ? "#b45309" : "#6b7280";
+  const bgColor = gender === "M" ? "#fffbeb" : gender === "F" ? "#fff7ed" : "#f9fafb";
+  const initials = node.name.split(" ").map((n) => n[0]).join("").slice(0, 2);
+
+  return (
+    <g transform={`translate(${x - CARD_W / 2}, ${y})`}>
+      {/* Shadow */}
+      <rect x={2} y={3} width={CARD_W} height={h} rx={10} fill="rgba(0,0,0,0.08)" />
+      {/* Card bg */}
+      <rect x={0} y={0} width={CARD_W} height={h} rx={10} fill={bgColor} stroke={accentColor} strokeWidth={1.2} />
+      {/* Left accent */}
+      <rect x={0} y={0} width={4} height={h} rx={2} fill={accentColor} />
+
+      {/* Avatar */}
+      <circle cx={24} cy={hasSpouse ? 22 : h / 2} r={13} fill={accentColor} />
+      <text x={24} y={hasSpouse ? 26 : h / 2 + 4} fill="white" fontSize={9} fontWeight="bold" textAnchor="middle">{initials}</text>
+
+      {/* Name */}
+      <text x={44} y={hasSpouse ? 18 : h / 2 - 4} fill="#1c1917" fontSize={11} fontWeight="700">{node.name}</text>
+
+      {/* Dates */}
+      {node.attributes?.born && (
+        <text x={44} y={hasSpouse ? 30 : h / 2 + 8} fill="#a1a1aa" fontSize={8}>
+          {node.attributes.born}{node.attributes.died ? ` – ${node.attributes.died}` : ""}
+        </text>
+      )}
+
+      {/* Spouse */}
+      {hasSpouse && (
+        <>
+          <line x1={10} y1={40} x2={CARD_W - 10} y2={40} stroke={accentColor} strokeWidth={0.4} strokeOpacity={0.4} />
+          <text x={14} y={57} fill={accentColor} fontSize={10}>♥</text>
+          <text x={28} y={57} fill="#78716c" fontSize={10} fontWeight="500">{node.attributes?.spouse}</text>
+        </>
+      )}
+
+      {/* Gen badge */}
+      {node.attributes?.generation && (
+        <>
+          <circle cx={CARD_W - 14} cy={14} r={9} fill={accentColor} />
+          <text x={CARD_W - 14} y={17} fill="white" fontSize={7} fontWeight="bold" textAnchor="middle">G{node.attributes.generation}</text>
+        </>
+      )}
+
+      {/* Clickable link */}
+      {node._id && (
+        <a href={`/persons/${node._id}`} style={{ cursor: "pointer" }}>
+          <rect x={0} y={0} width={CARD_W} height={h} fill="transparent" />
+        </a>
+      )}
+    </g>
+  );
+}
+
 export default function TreePage() {
   const [treeData, setTreeData] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const [viewBox, setViewBox] = useState("0 0 800 600");
+  const [dragging, setDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
     fetch("/api/tree")
@@ -29,179 +157,22 @@ export default function TreePage() {
       .catch(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    if (containerRef.current) {
-      const { width } = containerRef.current.getBoundingClientRect();
-      setTranslate({ x: width / 2, y: 80 });
-    }
-  }, [loading]);
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    setZoom((z) => Math.max(0.3, Math.min(3, z - e.deltaY * 0.001)));
+  }, []);
 
-  const renderCustomNode = useCallback(
-    ({ nodeDatum }: { nodeDatum: TreeNode }) => {
-      const gender = nodeDatum.attributes?.gender;
-      const hasSpouse = !!nodeDatum.attributes?.spouse;
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    setDragging(true);
+    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  }, [pan]);
 
-      // Colors
-      const accentColor = gender === "M" ? "#b45309" : gender === "F" ? "#d97706" : "#78716c";
-      const bgGradient = gender === "M" ? "#fef3c7" : gender === "F" ? "#fff7ed" : "#f5f5f4";
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragging) return;
+    setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+  }, [dragging, dragStart]);
 
-      const cardWidth = hasSpouse ? 220 : 150;
-      const cardHeight = hasSpouse ? 70 : 55;
-      const cardX = -cardWidth / 2;
-      const cardY = -cardHeight / 2;
-
-      const initials = nodeDatum.name.split(" ").map((n) => n[0]).join("").slice(0, 2);
-
-      return (
-        <g>
-          {/* Shadow */}
-          <rect
-            x={cardX + 2}
-            y={cardY + 3}
-            width={cardWidth}
-            height={cardHeight}
-            rx={12}
-            fill="rgba(0,0,0,0.06)"
-          />
-
-          {/* Card */}
-          <rect
-            x={cardX}
-            y={cardY}
-            width={cardWidth}
-            height={cardHeight}
-            rx={12}
-            fill={bgGradient}
-            stroke={accentColor}
-            strokeWidth={1.5}
-          />
-
-          {/* Left accent bar */}
-          <rect
-            x={cardX}
-            y={cardY}
-            width={5}
-            height={cardHeight}
-            rx={2}
-            fill={accentColor}
-          />
-
-          {/* Avatar circle */}
-          <circle
-            cx={cardX + 28}
-            cy={0}
-            r={15}
-            fill={accentColor}
-          />
-          <text
-            x={cardX + 28}
-            y={4}
-            fill="white"
-            fontSize={10}
-            fontWeight="bold"
-            textAnchor="middle"
-          >
-            {initials}
-          </text>
-
-          {/* Name */}
-          <text
-            x={cardX + 50}
-            y={hasSpouse ? -10 : -3}
-            fill="#292524"
-            fontSize={11}
-            fontWeight="700"
-          >
-            {nodeDatum.name}
-          </text>
-
-          {/* Dates below name */}
-          {nodeDatum.attributes?.born && (
-            <text
-              x={cardX + 50}
-              y={hasSpouse ? 3 : 10}
-              fill="#78716c"
-              fontSize={9}
-            >
-              {nodeDatum.attributes.born}
-              {nodeDatum.attributes.died ? ` – ${nodeDatum.attributes.died}` : ""}
-            </text>
-          )}
-
-          {/* Spouse section */}
-          {hasSpouse && (
-            <>
-              {/* Divider line */}
-              <line
-                x1={cardX + 15}
-                y1={14}
-                x2={cardX + cardWidth - 15}
-                y2={14}
-                stroke={accentColor}
-                strokeWidth={0.5}
-                strokeOpacity={0.3}
-              />
-              {/* Heart + spouse name */}
-              <text
-                x={cardX + 18}
-                y={28}
-                fill={accentColor}
-                fontSize={9}
-              >
-                ♥
-              </text>
-              <text
-                x={cardX + 30}
-                y={28}
-                fill="#78716c"
-                fontSize={10}
-                fontWeight="500"
-              >
-                {nodeDatum.attributes?.spouse}
-              </text>
-            </>
-          )}
-
-          {/* Generation badge */}
-          {nodeDatum.attributes?.generation && (
-            <>
-              <circle
-                cx={cardX + cardWidth - 12}
-                cy={cardY + 12}
-                r={9}
-                fill={accentColor}
-              />
-              <text
-                x={cardX + cardWidth - 12}
-                y={cardY + 15}
-                fill="white"
-                fontSize={7}
-                fontWeight="bold"
-                textAnchor="middle"
-              >
-                G{nodeDatum.attributes.generation}
-              </text>
-            </>
-          )}
-
-          {/* Clickable overlay */}
-          {nodeDatum._id && (
-            <a href={`/persons/${nodeDatum._id}`}>
-              <rect
-                x={cardX}
-                y={cardY}
-                width={cardWidth}
-                height={cardHeight}
-                fill="transparent"
-                style={{ cursor: "pointer" }}
-              />
-            </a>
-          )}
-        </g>
-      );
-    },
-    []
-  );
+  const handleMouseUp = useCallback(() => setDragging(false), []);
 
   if (loading) {
     return (
@@ -226,10 +197,29 @@ export default function TreePage() {
     );
   }
 
-  const data: TreeNode =
+  // Layout all trees
+  const rootNode: TreeNode =
     treeData.length === 1
       ? treeData[0]
       : { name: "Family", children: treeData, attributes: {} };
+
+  const layout = layoutTree(rootNode, 0);
+  const { nodes, lines } = flattenNodes(layout, 0, 0);
+
+  // Calculate SVG bounds
+  const padding = 60;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const n of nodes) {
+    minX = Math.min(minX, n.x - CARD_W / 2);
+    maxX = Math.max(maxX, n.x + CARD_W / 2);
+    minY = Math.min(minY, n.y);
+    maxY = Math.max(maxY, n.y + CARD_H_SPOUSE);
+  }
+
+  const svgW = maxX - minX + padding * 2;
+  const svgH = maxY - minY + padding * 2;
+  const offsetX = -minX + padding;
+  const offsetY = -minY + padding;
 
   return (
     <div>
@@ -244,22 +234,61 @@ export default function TreePage() {
           width: "100%",
           height: "75vh",
           background: "linear-gradient(180deg, #fffbeb 0%, #ffffff 40%, #fefce8 100%)",
+          cursor: dragging ? "grabbing" : "grab",
         }}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
       >
-        <Tree
-          data={data}
-          translate={translate}
-          orientation="vertical"
-          pathFunc="step"
-          collapsible={true}
-          separation={{ siblings: 1.5, nonSiblings: 2 }}
-          nodeSize={{ x: 260, y: 110 }}
-          renderCustomNodeElement={(rd3tProps) =>
-            renderCustomNode(rd3tProps as { nodeDatum: TreeNode })
-          }
-          pathClassFunc={() => "!stroke-amber-300"}
-          zoom={0.9}
-        />
+        <svg
+          width="100%"
+          height="100%"
+          viewBox={`0 0 ${svgW} ${svgH}`}
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: "center center",
+          }}
+        >
+          {/* Connector lines */}
+          {lines.map((line, i) => (
+            <g key={`line-${i}`}>
+              <line
+                x1={line.x1 + offsetX}
+                y1={line.y1 + offsetY}
+                x2={line.x1 + offsetX}
+                y2={(line.y1 + line.y2) / 2 + offsetY}
+                stroke="#d97706"
+                strokeWidth={1.5}
+                strokeOpacity={0.35}
+              />
+              <line
+                x1={line.x1 + offsetX}
+                y1={(line.y1 + line.y2) / 2 + offsetY}
+                x2={line.x2 + offsetX}
+                y2={(line.y1 + line.y2) / 2 + offsetY}
+                stroke="#d97706"
+                strokeWidth={1.5}
+                strokeOpacity={0.35}
+              />
+              <line
+                x1={line.x2 + offsetX}
+                y1={(line.y1 + line.y2) / 2 + offsetY}
+                x2={line.x2 + offsetX}
+                y2={line.y2 + offsetY}
+                stroke="#d97706"
+                strokeWidth={1.5}
+                strokeOpacity={0.35}
+              />
+            </g>
+          ))}
+
+          {/* Node cards */}
+          {nodes.map((n, i) => (
+            <TreeCard key={i} node={n.node} x={n.x + offsetX} y={n.y + offsetY} />
+          ))}
+        </svg>
       </div>
     </div>
   );
