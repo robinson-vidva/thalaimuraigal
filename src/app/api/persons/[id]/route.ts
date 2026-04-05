@@ -29,11 +29,24 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const { id } = params;
-  const body = await request.json();
-  const { fatherId, motherId, spouseId, ...personData } = body;
-  const person = await prisma.person.update({ where: { id }, data: personData });
-  return NextResponse.json(person);
+  try {
+    const { id } = params;
+    const body = await request.json();
+    const { fatherId, motherId, spouseId, familySide, birthOrder, ...personData } = body;
+
+    const updateData: Record<string, unknown> = { ...personData };
+    if (familySide !== undefined) updateData.familySide = familySide;
+    if (birthOrder !== undefined) updateData.birthOrder = birthOrder;
+
+    const person = await prisma.person.update({ where: { id }, data: updateData });
+    return NextResponse.json(person);
+  } catch (error) {
+    console.error("PUT /api/persons/[id] error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to update" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function DELETE(
