@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { getPersonRelationships } from "@/lib/relationships";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import DeletePersonButton from "@/components/DeletePersonButton";
 
 export default async function PersonProfilePage({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -44,8 +45,9 @@ export default async function PersonProfilePage({ params }: { params: { id: stri
               <p className="text-sm text-gray-700">{person.biography}</p>
             </div>
           )}
-          <div className="mt-4 pt-4 border-t border-gray-100 flex justify-center">
+          <div className="mt-4 pt-4 border-t border-gray-100 flex justify-center gap-4">
             <Link href={`/persons/${id}/edit`} className="text-amber-700 hover:underline text-sm font-medium">Edit Profile</Link>
+            <DeletePersonButton personId={id} personName={fullName} />
           </div>
         </div>
         <div className="md:col-span-2 space-y-4">
