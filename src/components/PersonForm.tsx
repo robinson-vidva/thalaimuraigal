@@ -53,23 +53,57 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
   const availablePersons = persons.filter((p) => !initialData?.id || p.id !== initialData.id);
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-2xl space-y-6">
+    <form onSubmit={handleSubmit} className="max-w-3xl space-y-8">
       {error && <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm">{error}</div>}
 
-      <fieldset className="border border-gray-200 rounded-lg p-4">
-        <legend className="text-sm font-semibold text-gray-600 px-2">Basic Information</legend>
+      {/* ── Section 1: Personal Details ── */}
+      <fieldset className="border border-gray-200 rounded-lg p-5">
+        <legend className="text-sm font-semibold text-gray-700 px-2">Personal Details</legend>
+        <p className="text-xs text-gray-400 mb-4 -mt-1">Name, identity, and background</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label><input required type="text" value={form.firstName} onChange={(e) => update("firstName", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label><input type="text" value={form.lastName ?? ""} onChange={(e) => update("lastName", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Nickname</label><input type="text" value={form.nickname ?? ""} onChange={(e) => update("nickname", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Gender</label><select value={form.gender ?? ""} onChange={(e) => update("gender", (e.target.value || undefined) as Gender | undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">Select...</option><option value="M">Male</option><option value="F">Female</option><option value="O">Other</option></select></div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">First Name <span className="text-red-400">*</span></label>
+            <input required type="text" value={form.firstName} onChange={(e) => update("firstName", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+            <input type="text" value={form.lastName ?? ""} onChange={(e) => update("lastName", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nickname</label>
+            <input type="text" value={form.nickname ?? ""} onChange={(e) => update("nickname", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+            <select value={form.gender ?? ""} onChange={(e) => update("gender", (e.target.value || undefined) as Gender | undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500">
+              <option value="">Select...</option>
+              <option value="M">Male</option>
+              <option value="F">Female</option>
+              <option value="O">Other</option>
+            </select>
+          </div>
+        </div>
+        <div className="mt-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Occupation</label>
+          <input type="text" value={form.occupation ?? ""} onChange={(e) => update("occupation", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+        </div>
+        <div className="mt-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Biography</label>
+          <textarea rows={3} value={form.biography ?? ""} onChange={(e) => update("biography", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" placeholder="A short description about this person..." />
         </div>
       </fieldset>
 
-      <fieldset className="border border-gray-200 rounded-lg p-4">
-        <legend className="text-sm font-semibold text-gray-600 px-2">Life Details</legend>
+      {/* ── Section 2: Birth & Life ── */}
+      <fieldset className="border border-gray-200 rounded-lg p-5">
+        <legend className="text-sm font-semibold text-gray-700 px-2">Birth & Life</legend>
+        <p className="text-xs text-gray-400 mb-4 -mt-1">Timeline, locations, and life status</p>
+
+        {/* Birth row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label><input type="text" placeholder="YYYY-MM-DD or YYYY" value={form.dateOfBirth ?? ""} onChange={(e) => update("dateOfBirth", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+            <input type="text" placeholder="YYYY-MM-DD or YYYY" value={form.dateOfBirth ?? ""} onChange={(e) => update("dateOfBirth", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+          </div>
           <div>
             <LocationSearch
               label="Place of Birth"
@@ -84,20 +118,32 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
               <p className="text-xs text-gray-500 mt-1 truncate" title={form.placeOfBirth}>Selected: {form.placeOfBirth}</p>
             )}
           </div>
-          <div>
-            <label className="flex items-center gap-2 text-sm mb-2"><input type="checkbox" checked={form.isLiving ?? true} onChange={(e) => update("isLiving", e.target.checked)} />Living</label>
-            {!form.isLiving && (<><input type="text" placeholder="Date of Death" value={form.dateOfDeath ?? ""} onChange={(e) => update("dateOfDeath", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm mb-2" /><input type="text" placeholder="Place of Death" value={form.placeOfDeath ?? ""} onChange={(e) => update("placeOfDeath", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></>)}
-          </div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Occupation</label><input type="text" value={form.occupation ?? ""} onChange={(e) => update("occupation", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
         </div>
-        <div className="mt-4"><label className="block text-sm font-medium text-gray-700 mb-1">Biography</label><textarea rows={3} value={form.biography ?? ""} onChange={(e) => update("biography", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
-      </fieldset>
 
-      <fieldset className="border border-gray-200 rounded-lg p-4">
-        <legend className="text-sm font-semibold text-gray-600 px-2">Current Location</legend>
-        <div className="space-y-4">
+        {/* Living / Death section */}
+        <div className="mt-5 pt-4 border-t border-gray-100">
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={form.isLiving ?? true} onChange={(e) => update("isLiving", e.target.checked)} className="rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+            Currently living
+          </label>
+          {!form.isLiving && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3 pl-6 border-l-2 border-gray-200">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date of Death</label>
+                <input type="text" placeholder="YYYY-MM-DD or YYYY" value={form.dateOfDeath ?? ""} onChange={(e) => update("dateOfDeath", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Place of Death</label>
+                <input type="text" value={form.placeOfDeath ?? ""} onChange={(e) => update("placeOfDeath", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Current Location */}
+        <div className="mt-5 pt-4 border-t border-gray-100">
           <LocationSearch
-            label="Search Current Location"
+            label="Current Location"
             placeholder="Search for current city or town..."
             onSelect={(loc) => updateMultiple({
               currentCity: loc.city,
@@ -108,26 +154,71 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
             })}
           />
           {(form.currentCity || form.currentState || form.currentCountry) && (
-            <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+            <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded mt-2">
               Current: {[form.currentCity, form.currentState, form.currentCountry].filter(Boolean).join(", ")}
             </div>
           )}
         </div>
       </fieldset>
 
-      <fieldset className="border border-gray-200 rounded-lg p-4">
-        <legend className="text-sm font-semibold text-gray-600 px-2">Family Links (optional)</legend>
+      {/* ── Section 3: Family Connections ── */}
+      <fieldset className="border border-gray-200 rounded-lg p-5">
+        <legend className="text-sm font-semibold text-gray-700 px-2">Family Connections</legend>
+        <p className="text-xs text-gray-400 mb-4 -mt-1">Link to parents, spouse, and family side</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Father</label><select value={form.fatherId ?? ""} onChange={(e) => update("fatherId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">None</option>{availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}</select></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Mother</label><select value={form.motherId ?? ""} onChange={(e) => update("motherId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">None</option>{availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}</select></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Spouse</label><select value={form.spouseId ?? ""} onChange={(e) => update("spouseId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">None</option>{availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}</select></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Birth Order</label><input type="number" min="1" value={form.birthOrder ?? ""} onChange={(e) => update("birthOrder", e.target.value ? parseInt(e.target.value) : undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Father</label>
+            <select value={form.fatherId ?? ""} onChange={(e) => update("fatherId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500">
+              <option value="">None</option>
+              {availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mother</label>
+            <select value={form.motherId ?? ""} onChange={(e) => update("motherId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500">
+              <option value="">None</option>
+              {availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Spouse</label>
+            <select value={form.spouseId ?? ""} onChange={(e) => update("spouseId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500">
+              <option value="">None</option>
+              {availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Birth Order</label>
+            <input type="number" min="1" value={form.birthOrder ?? ""} onChange={(e) => update("birthOrder", e.target.value ? parseInt(e.target.value) : undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" placeholder="e.g. 1 for eldest" />
+          </div>
         </div>
-        <div className="mt-4"><label className="block text-sm font-medium text-gray-700 mb-1">Family Side</label><select value={form.familySide ?? ""} onChange={(e) => update("familySide", e.target.value || undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">Select...</option><option value="paternal">Paternal</option><option value="maternal">Maternal</option><option value="both">Both</option></select></div>
+        <div className="mt-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Family Side</label>
+          <select value={form.familySide ?? ""} onChange={(e) => update("familySide", e.target.value || undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500">
+            <option value="">Select...</option>
+            <option value="paternal">Paternal</option>
+            <option value="maternal">Maternal</option>
+            <option value="both">Both</option>
+          </select>
+        </div>
       </fieldset>
 
-      <div><label className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea rows={2} value={form.notes ?? ""} onChange={(e) => update("notes", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
-      <button type="submit" disabled={loading} className="bg-amber-700 text-white px-6 py-2 rounded-md hover:bg-amber-800 disabled:opacity-50 font-medium">{loading ? "Saving..." : isEdit ? "Update Member" : "Add Member"}</button>
+      {/* ── Section 4: Additional Notes ── */}
+      <fieldset className="border border-gray-200 rounded-lg p-5">
+        <legend className="text-sm font-semibold text-gray-700 px-2">Additional Notes</legend>
+        <p className="text-xs text-gray-400 mb-4 -mt-1">Any extra information or stories</p>
+        <textarea rows={3} value={form.notes ?? ""} onChange={(e) => update("notes", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" placeholder="Add any additional notes, stories, or memories..." />
+      </fieldset>
+
+      {/* Submit */}
+      <div className="flex items-center gap-4">
+        <button type="submit" disabled={loading} className="bg-amber-700 text-white px-8 py-2.5 rounded-md hover:bg-amber-800 disabled:opacity-50 font-medium transition-colors">
+          {loading ? "Saving..." : isEdit ? "Update Member" : "Add Member"}
+        </button>
+        <button type="button" onClick={() => router.back()} className="text-gray-500 hover:text-gray-700 text-sm font-medium transition-colors">
+          Cancel
+        </button>
+      </div>
     </form>
   );
 }
