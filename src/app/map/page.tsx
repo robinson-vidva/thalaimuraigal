@@ -2,25 +2,11 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import Link from "next/link";
 
-// Dynamically import map components to avoid SSR issues with Leaflet
-const MapContainer = dynamic(
-  () => import("react-leaflet").then((mod) => mod.MapContainer),
-  { ssr: false }
-);
-const TileLayer = dynamic(
-  () => import("react-leaflet").then((mod) => mod.TileLayer),
-  { ssr: false }
-);
-const Marker = dynamic(
-  () => import("react-leaflet").then((mod) => mod.Marker),
-  { ssr: false }
-);
-const Popup = dynamic(
-  () => import("react-leaflet").then((mod) => mod.Popup),
-  { ssr: false }
-);
+const MapWrapper = dynamic(() => import("@/components/MapWrapper"), {
+  ssr: false,
+  loading: () => <div className="h-full flex items-center justify-center text-gray-400">Loading map...</div>,
+});
 
 interface PersonLocation {
   id: string;
@@ -43,10 +29,8 @@ export default function MapPage() {
   const [persons, setPersons] = useState<PersonLocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>("birth");
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
     fetch("/api/persons")
       .then((r) => r.json())
       .then((data) => {
@@ -58,22 +42,16 @@ export default function MapPage() {
 
   const markersData = persons
     .map((p) => {
-      const lat =
-        viewMode === "birth" ? p.birthLatitude : p.currentLatitude;
-      const lng =
-        viewMode === "birth" ? p.birthLongitude : p.currentLongitude;
+      const lat = viewMode === "birth" ? p.birthLatitude : p.currentLatitude;
+      const lng = viewMode === "birth" ? p.birthLongitude : p.currentLongitude;
       const place =
         viewMode === "birth"
           ? p.placeOfBirth
           : [p.currentCity, p.currentCountry].filter(Boolean).join(", ");
       if (lat == null || lng == null) return null;
-      return { ...p, lat, lng, place };
+      return { id: p.id, firstName: p.firstName, lastName: p.lastName, dateOfBirth: p.dateOfBirth, lat, lng, place };
     })
-    .filter(Boolean) as (PersonLocation & {
-    lat: number;
-    lng: number;
-    place: string | null;
-  })[];
+    .filter(Boolean) as { id: string; firstName: string; lastName: string | null; dateOfBirth: string | null; lat: number; lng: number; place: string | null }[];
 
   if (loading) {
     return (
@@ -87,12 +65,10 @@ export default function MapPage() {
     return (
       <div className="text-center py-16">
         <h1 className="text-2xl font-bold text-amber-900 mb-4">Family Map</h1>
-        <p className="text-gray-500 mb-2">
-          No location data available yet.
-        </p>
+        <p className="text-gray-500 mb-2">No location data available yet.</p>
         <p className="text-gray-400 text-sm">
-          Add birth coordinates or current coordinates to family members to see
-          them on the map. Edit a member and add latitude/longitude values.
+          Add or edit a family member and use the location search to set their
+          birth or current location. They will appear on the map automatically.
         </p>
       </div>
     );
@@ -130,50 +106,12 @@ export default function MapPage() {
           </button>
         </div>
       </div>
-
-      {mounted && (
-        <div
-          className="rounded-lg shadow-md overflow-hidden border border-amber-100"
-          style={{ height: "70vh" }}
-        >
-          <link
-            rel="stylesheet"
-            href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-          />
-          <MapContainer
-            center={center}
-            zoom={5}
-            style={{ height: "100%", width: "100%" }}
-          >
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            {markersData.map((m) => (
-              <Marker key={m.id} position={[m.lat, m.lng]}>
-                <Popup>
-                  <div className="text-sm">
-                    <Link
-                      href={`/persons/${m.id}`}
-                      className="font-semibold text-amber-800 hover:underline"
-                    >
-                      {m.firstName} {m.lastName ?? ""}
-                    </Link>
-                    {m.place && (
-                      <p className="text-gray-500 mt-1">{m.place}</p>
-                    )}
-                    {m.dateOfBirth && (
-                      <p className="text-gray-400 text-xs">
-                        Born: {m.dateOfBirth}
-                      </p>
-                    )}
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
-          </MapContainer>
-        </div>
-      )}
+      <div
+        className="rounded-lg shadow-md overflow-hidden border border-amber-100"
+        style={{ height: "70vh" }}
+      >
+        <MapWrapper markers={markersData} center={center} />
+      </div>
     </div>
   );
 }
