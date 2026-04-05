@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { recalculateGenerations } from "@/lib/generations";
 
-// GET /api/persons - List all persons with optional filters
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const search = searchParams.get("search");
@@ -47,53 +46,28 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(persons);
 }
 
-// POST /api/persons - Create a new person
 export async function POST(request: NextRequest) {
   const body = await request.json();
+  const { fatherId, motherId, spouseId, ...personData } = body;
 
-  const {
-    fatherId,
-    motherId,
-    spouseId,
-    ...personData
-  } = body;
+  const person = await prisma.person.create({ data: personData });
 
-  const person = await prisma.person.create({
-    data: personData,
-  });
-
-  // Create parent-child relationships
   if (fatherId) {
     await prisma.parentChild.create({
-      data: {
-        parentId: fatherId,
-        childId: person.id,
-        parentType: "father",
-      },
+      data: { parentId: fatherId, childId: person.id, parentType: "father" },
     });
   }
-
   if (motherId) {
     await prisma.parentChild.create({
-      data: {
-        parentId: motherId,
-        childId: person.id,
-        parentType: "mother",
-      },
+      data: { parentId: motherId, childId: person.id, parentType: "mother" },
     });
   }
-
-  // Create spouse relationship
   if (spouseId) {
     await prisma.spouse.create({
-      data: {
-        person1Id: person.id,
-        person2Id: spouseId,
-      },
+      data: { person1Id: person.id, person2Id: spouseId },
     });
   }
 
-  // Recalculate generations if relationships were added
   if (fatherId || motherId || spouseId) {
     await recalculateGenerations();
   }
