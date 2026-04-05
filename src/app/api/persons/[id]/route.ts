@@ -32,11 +32,23 @@ export async function PUT(
   try {
     const { id } = params;
     const body = await request.json();
-    const { fatherId, motherId, spouseId, familySide, birthOrder, ...personData } = body;
 
-    const updateData: Record<string, unknown> = { ...personData };
-    if (familySide !== undefined) updateData.familySide = familySide;
-    if (birthOrder !== undefined) updateData.birthOrder = birthOrder;
+    // Only allow valid Person scalar fields — strip relations and metadata
+    const allowedFields = [
+      "firstName", "lastName", "maidenName", "nickname", "gender",
+      "dateOfBirth", "dateOfBirthApprox", "placeOfBirth",
+      "dateOfDeath", "dateOfDeathApprox", "placeOfDeath", "isLiving",
+      "biography", "occupation", "education", "religion", "denomination",
+      "email", "phone", "currentCity", "currentState", "currentCountry",
+      "photoUrl", "birthLatitude", "birthLongitude",
+      "currentLatitude", "currentLongitude",
+      "generation", "familySide", "birthOrder", "addedBy", "notes",
+    ];
+
+    const updateData: Record<string, unknown> = {};
+    for (const key of allowedFields) {
+      if (key in body) updateData[key] = body[key];
+    }
 
     const person = await prisma.person.update({ where: { id }, data: updateData });
     return NextResponse.json(person);
