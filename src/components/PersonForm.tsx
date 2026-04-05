@@ -35,8 +35,8 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
       const url = isEdit ? `/api/persons/${initialData?.id}` : "/api/persons";
       const method = isEdit ? "PUT" : "POST";
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(cleaned) });
-      if (!res.ok) { const data = await res.json(); throw new Error(data.error || "Failed to save"); }
       const person = await res.json();
+      if (!res.ok) { throw new Error(person.error || "Failed to save"); }
       router.push(`/persons/${person.id}`);
       router.refresh();
     } catch (err) {
