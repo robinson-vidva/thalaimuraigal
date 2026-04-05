@@ -5,3 +5,10 @@
 body {
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Family tree connector lines */
+.rd3t-link {
+  stroke: #d97706 !important;
+  stroke-width: 1.5 !important;
+  stroke-opacity: 0.4 !important;
+}
