@@ -81,7 +81,7 @@ export default function MapPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <h1 className="text-2xl font-bold text-amber-900">Family Map</h1>
         <div className="flex gap-2">
           <button
@@ -108,7 +108,7 @@ export default function MapPage() {
       </div>
       <div
         className="rounded-lg shadow-md overflow-hidden border border-amber-100"
-        style={{ height: "70vh" }}
+        style={{ height: "min(70vh, 500px)" }}
       >
         <MapWrapper markers={markersData} center={center} />
       </div>

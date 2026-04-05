@@ -58,7 +58,7 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
 
       <fieldset className="border border-gray-200 rounded-lg p-4">
         <legend className="text-sm font-semibold text-gray-600 px-2">Basic Information</legend>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div><label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label><input required type="text" value={form.firstName} onChange={(e) => update("firstName", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label><input type="text" value={form.lastName ?? ""} onChange={(e) => update("lastName", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Nickname</label><input type="text" value={form.nickname ?? ""} onChange={(e) => update("nickname", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
@@ -68,9 +68,22 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
 
       <fieldset className="border border-gray-200 rounded-lg p-4">
         <legend className="text-sm font-semibold text-gray-600 px-2">Life Details</legend>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label><input type="text" placeholder="YYYY-MM-DD or YYYY" value={form.dateOfBirth ?? ""} onChange={(e) => update("dateOfBirth", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Place of Birth</label><input type="text" value={form.placeOfBirth ?? ""} onChange={(e) => update("placeOfBirth", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
+          <div>
+            <LocationSearch
+              label="Place of Birth"
+              placeholder="Search for birth city or town..."
+              onSelect={(loc) => updateMultiple({
+                placeOfBirth: loc.displayName,
+                birthLatitude: loc.latitude,
+                birthLongitude: loc.longitude,
+              })}
+            />
+            {form.placeOfBirth && (
+              <p className="text-xs text-gray-500 mt-1 truncate" title={form.placeOfBirth}>Selected: {form.placeOfBirth}</p>
+            )}
+          </div>
           <div>
             <label className="flex items-center gap-2 text-sm mb-2"><input type="checkbox" checked={form.isLiving ?? true} onChange={(e) => update("isLiving", e.target.checked)} />Living</label>
             {!form.isLiving && (<><input type="text" placeholder="Date of Death" value={form.dateOfDeath ?? ""} onChange={(e) => update("dateOfDeath", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm mb-2" /><input type="text" placeholder="Place of Death" value={form.placeOfDeath ?? ""} onChange={(e) => update("placeOfDeath", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></>)}
@@ -81,17 +94,8 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
       </fieldset>
 
       <fieldset className="border border-gray-200 rounded-lg p-4">
-        <legend className="text-sm font-semibold text-gray-600 px-2">Location</legend>
+        <legend className="text-sm font-semibold text-gray-600 px-2">Current Location</legend>
         <div className="space-y-4">
-          <LocationSearch
-            label="Search Birth Location"
-            placeholder="Search for birth city or town..."
-            onSelect={(loc) => updateMultiple({
-              placeOfBirth: loc.displayName,
-              birthLatitude: loc.latitude,
-              birthLongitude: loc.longitude,
-            })}
-          />
           <LocationSearch
             label="Search Current Location"
             placeholder="Search for current city or town..."
@@ -111,18 +115,16 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
         </div>
       </fieldset>
 
-      {!isEdit && (
-        <fieldset className="border border-gray-200 rounded-lg p-4">
-          <legend className="text-sm font-semibold text-gray-600 px-2">Family Links (optional)</legend>
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Father</label><select value={form.fatherId ?? ""} onChange={(e) => update("fatherId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">None</option>{availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}</select></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Mother</label><select value={form.motherId ?? ""} onChange={(e) => update("motherId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">None</option>{availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}</select></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Spouse</label><select value={form.spouseId ?? ""} onChange={(e) => update("spouseId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">None</option>{availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}</select></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Birth Order</label><input type="number" min="1" value={form.birthOrder ?? ""} onChange={(e) => update("birthOrder", e.target.value ? parseInt(e.target.value) : undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
-          </div>
-          <div className="mt-4"><label className="block text-sm font-medium text-gray-700 mb-1">Family Side</label><select value={form.familySide ?? ""} onChange={(e) => update("familySide", e.target.value || undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">Select...</option><option value="paternal">Paternal</option><option value="maternal">Maternal</option><option value="both">Both</option></select></div>
-        </fieldset>
-      )}
+      <fieldset className="border border-gray-200 rounded-lg p-4">
+        <legend className="text-sm font-semibold text-gray-600 px-2">Family Links (optional)</legend>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Father</label><select value={form.fatherId ?? ""} onChange={(e) => update("fatherId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">None</option>{availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}</select></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Mother</label><select value={form.motherId ?? ""} onChange={(e) => update("motherId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">None</option>{availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}</select></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Spouse</label><select value={form.spouseId ?? ""} onChange={(e) => update("spouseId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">None</option>{availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}</select></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Birth Order</label><input type="number" min="1" value={form.birthOrder ?? ""} onChange={(e) => update("birthOrder", e.target.value ? parseInt(e.target.value) : undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
+        </div>
+        <div className="mt-4"><label className="block text-sm font-medium text-gray-700 mb-1">Family Side</label><select value={form.familySide ?? ""} onChange={(e) => update("familySide", e.target.value || undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">Select...</option><option value="paternal">Paternal</option><option value="maternal">Maternal</option><option value="both">Both</option></select></div>
+      </fieldset>
 
       <div><label className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea rows={2} value={form.notes ?? ""} onChange={(e) => update("notes", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
       <button type="submit" disabled={loading} className="bg-amber-700 text-white px-6 py-2 rounded-md hover:bg-amber-800 disabled:opacity-50 font-medium">{loading ? "Saving..." : isEdit ? "Update Member" : "Add Member"}</button>

@@ -45,12 +45,45 @@ export async function PUT(
       "generation", "familySide", "birthOrder", "addedBy", "notes",
     ];
 
+    const { fatherId, motherId, spouseId, ...rest } = body;
+
     const updateData: Record<string, unknown> = {};
     for (const key of allowedFields) {
-      if (key in body) updateData[key] = body[key];
+      if (key in rest) updateData[key] = rest[key];
     }
 
     const person = await prisma.person.update({ where: { id }, data: updateData });
+
+    // Update father relationship
+    if ("fatherId" in body) {
+      await prisma.parentChild.deleteMany({ where: { childId: id, parentType: "father" } });
+      if (fatherId) {
+        await prisma.parentChild.create({ data: { parentId: fatherId, childId: id, parentType: "father" } });
+      }
+    }
+
+    // Update mother relationship
+    if ("motherId" in body) {
+      await prisma.parentChild.deleteMany({ where: { childId: id, parentType: "mother" } });
+      if (motherId) {
+        await prisma.parentChild.create({ data: { parentId: motherId, childId: id, parentType: "mother" } });
+      }
+    }
+
+    // Update spouse relationship
+    if ("spouseId" in body) {
+      await prisma.spouse.deleteMany({
+        where: { OR: [{ person1Id: id }, { person2Id: id }] },
+      });
+      if (spouseId) {
+        await prisma.spouse.create({ data: { person1Id: id, person2Id: spouseId } });
+      }
+    }
+
+    if ("fatherId" in body || "motherId" in body || "spouseId" in body) {
+      await recalculateGenerations();
+    }
+
     return NextResponse.json(person);
   } catch (error) {
     console.error("PUT /api/persons/[id] error:", error);

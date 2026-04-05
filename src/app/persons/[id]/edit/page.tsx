@@ -14,7 +14,14 @@ export default function EditPersonPage() {
   useEffect(() => {
     fetch(`/api/persons/${id}`)
       .then((r) => r.json())
-      .then((person) => { setData({ ...person, id: person.id }); setLoading(false); });
+      .then((person) => {
+        const fatherId = person.childOf?.find((c: { parentType: string }) => c.parentType === "father")?.parent?.id ?? "";
+        const motherId = person.childOf?.find((c: { parentType: string }) => c.parentType === "mother")?.parent?.id ?? "";
+        const spouse = person.spouse1?.[0]?.person2 ?? person.spouse2?.[0]?.person1;
+        const spouseId = spouse?.id ?? "";
+        setData({ ...person, id: person.id, fatherId, motherId, spouseId });
+        setLoading(false);
+      });
   }, [id]);
 
   if (loading) return <p className="text-gray-500">Loading...</p>;

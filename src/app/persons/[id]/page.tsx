@@ -89,7 +89,7 @@ export default async function PersonProfilePage({ params }: { params: { id: stri
           {person.media.length > 0 && (
             <div className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-lg font-bold text-amber-900 mb-4">Photos & Media</h2>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {person.media.filter((m) => m.type === "photo").map((m) => (
                   <div key={m.id} className="aspect-square rounded-md overflow-hidden bg-gray-100">
                     <img src={m.url} alt={m.caption ?? ""} className="w-full h-full object-cover" />

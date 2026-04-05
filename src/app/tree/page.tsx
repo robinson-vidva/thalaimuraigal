@@ -232,7 +232,7 @@ export default function TreePage() {
         className="rounded-xl shadow-lg border border-amber-100 overflow-hidden"
         style={{
           width: "100%",
-          height: "75vh",
+          height: "min(75vh, calc(100dvh - 180px))",
           background: "linear-gradient(180deg, #fffbeb 0%, #ffffff 40%, #fefce8 100%)",
           cursor: dragging ? "grabbing" : "grab",
         }}

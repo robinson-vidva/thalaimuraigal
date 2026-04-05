@@ -67,7 +67,7 @@ export default function PersonsPage() {
         <Link href="/persons/new" className="bg-amber-700 text-white px-4 py-2 rounded-md hover:bg-amber-800 text-sm font-medium">+ Add Member</Link>
       </div>
       <div className="flex flex-wrap gap-3 mb-6">
-        <input type="text" placeholder="Search by name..." value={search} onChange={(e) => setSearch(e.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm w-64" />
+        <input type="text" placeholder="Search by name..." value={search} onChange={(e) => setSearch(e.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm w-full sm:w-64" />
         <select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm">
           <option value="">All Genders</option><option value="M">Male</option><option value="F">Female</option><option value="O">Other</option>
         </select>
@@ -83,7 +83,7 @@ export default function PersonsPage() {
         <div className="text-center py-12 text-gray-500"><p className="mb-2">No family members found.</p><Link href="/persons/new" className="text-amber-700 underline">Add the first member</Link></div>
       ) : (
         <div className="overflow-x-auto bg-white rounded-lg shadow">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[640px]">
             <thead className="bg-amber-100 text-amber-900"><tr>
               <th className="text-left px-4 py-3 font-semibold">Name</th><th className="text-left px-4 py-3 font-semibold">Gen</th><th className="text-left px-4 py-3 font-semibold">Gender</th><th className="text-left px-4 py-3 font-semibold">Born</th><th className="text-left px-4 py-3 font-semibold">Died</th><th className="text-left px-4 py-3 font-semibold">Father</th><th className="text-left px-4 py-3 font-semibold">Mother</th><th className="text-left px-4 py-3 font-semibold">Spouse</th>
             </tr></thead>
