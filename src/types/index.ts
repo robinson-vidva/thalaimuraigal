@@ -38,6 +38,10 @@ export interface PersonFormData {
   currentState?: string;
   currentCountry?: string;
   photoUrl?: string;
+  birthLatitude?: number;
+  birthLongitude?: number;
+  currentLatitude?: number;
+  currentLongitude?: number;
   familySide?: FamilySide;
   birthOrder?: number;
   notes?: string;

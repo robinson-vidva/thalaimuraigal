@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { PersonFormData, Gender } from "@/types";
+import LocationSearch from "./LocationSearch";
 
 interface PersonOption { id: string; firstName: string; lastName: string | null; }
 interface PersonFormProps { initialData?: PersonFormData & { id?: string }; isEdit?: boolean; }
@@ -17,6 +18,9 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
     dateOfBirth: "", placeOfBirth: "", dateOfDeath: "", placeOfDeath: "",
     isLiving: true, biography: "", occupation: "", familySide: undefined,
     birthOrder: undefined, fatherId: "", motherId: "", spouseId: "", notes: "",
+    currentCity: "", currentState: "", currentCountry: "",
+    birthLatitude: undefined, birthLongitude: undefined,
+    currentLatitude: undefined, currentLongitude: undefined,
     ...initialData,
   });
 
@@ -45,11 +49,13 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
   };
 
   const update = (field: keyof PersonFormData, value: unknown) => setForm((prev) => ({ ...prev, [field]: value }));
+  const updateMultiple = (fields: Partial<PersonFormData>) => setForm((prev) => ({ ...prev, ...fields }));
   const availablePersons = persons.filter((p) => !initialData?.id || p.id !== initialData.id);
 
   return (
     <form onSubmit={handleSubmit} className="max-w-2xl space-y-6">
       {error && <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm">{error}</div>}
+
       <fieldset className="border border-gray-200 rounded-lg p-4">
         <legend className="text-sm font-semibold text-gray-600 px-2">Basic Information</legend>
         <div className="grid grid-cols-2 gap-4">
@@ -59,6 +65,7 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Gender</label><select value={form.gender ?? ""} onChange={(e) => update("gender", (e.target.value || undefined) as Gender | undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">Select...</option><option value="M">Male</option><option value="F">Female</option><option value="O">Other</option></select></div>
         </div>
       </fieldset>
+
       <fieldset className="border border-gray-200 rounded-lg p-4">
         <legend className="text-sm font-semibold text-gray-600 px-2">Life Details</legend>
         <div className="grid grid-cols-2 gap-4">
@@ -72,6 +79,38 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
         </div>
         <div className="mt-4"><label className="block text-sm font-medium text-gray-700 mb-1">Biography</label><textarea rows={3} value={form.biography ?? ""} onChange={(e) => update("biography", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
       </fieldset>
+
+      <fieldset className="border border-gray-200 rounded-lg p-4">
+        <legend className="text-sm font-semibold text-gray-600 px-2">Location</legend>
+        <div className="space-y-4">
+          <LocationSearch
+            label="Search Birth Location"
+            placeholder="Search for birth city or town..."
+            onSelect={(loc) => updateMultiple({
+              placeOfBirth: loc.displayName,
+              birthLatitude: loc.latitude,
+              birthLongitude: loc.longitude,
+            })}
+          />
+          <LocationSearch
+            label="Search Current Location"
+            placeholder="Search for current city or town..."
+            onSelect={(loc) => updateMultiple({
+              currentCity: loc.city,
+              currentState: loc.state,
+              currentCountry: loc.country,
+              currentLatitude: loc.latitude,
+              currentLongitude: loc.longitude,
+            })}
+          />
+          {(form.currentCity || form.currentState || form.currentCountry) && (
+            <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+              Current: {[form.currentCity, form.currentState, form.currentCountry].filter(Boolean).join(", ")}
+            </div>
+          )}
+        </div>
+      </fieldset>
+
       {!isEdit && (
         <fieldset className="border border-gray-200 rounded-lg p-4">
           <legend className="text-sm font-semibold text-gray-600 px-2">Family Links (optional)</legend>
@@ -84,6 +123,7 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
           <div className="mt-4"><label className="block text-sm font-medium text-gray-700 mb-1">Family Side</label><select value={form.familySide ?? ""} onChange={(e) => update("familySide", e.target.value || undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="">Select...</option><option value="paternal">Paternal</option><option value="maternal">Maternal</option><option value="both">Both</option></select></div>
         </fieldset>
       )}
+
       <div><label className="block text-sm font-medium text-gray-700 mb-1">Notes</label><textarea rows={2} value={form.notes ?? ""} onChange={(e) => update("notes", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" /></div>
       <button type="submit" disabled={loading} className="bg-amber-700 text-white px-6 py-2 rounded-md hover:bg-amber-800 disabled:opacity-50 font-medium">{loading ? "Saving..." : isEdit ? "Update Member" : "Add Member"}</button>
     </form>
