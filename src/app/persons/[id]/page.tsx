@@ -15,7 +15,9 @@ export default async function PersonProfilePage({ params }: { params: { id: stri
 
   const relationships = await getPersonRelationships(id);
   const fullName = [person.firstName, person.lastName].filter(Boolean).join(" ");
-  const dates = [person.dateOfBirth, person.isLiving ? "present" : person.dateOfDeath ?? "?"].filter(Boolean).join(" - ");
+  const dates = person.isLiving
+    ? [person.dateOfBirth, "present"].filter(Boolean).join(" \u2013 ")
+    : [person.dateOfBirth, person.dateOfDeath ? `${person.dateOfDeath} \uD83D\uDD4A\uFE0F` : "\uD83D\uDD4A\uFE0F"].filter(Boolean).join(" \u2013 ");
 
   return (
     <div>

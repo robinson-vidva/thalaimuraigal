@@ -10,6 +10,7 @@ const navLinks = [
   { href: "/persons/new", label: "Add Member" },
   { href: "/tree", label: "Tree" },
   { href: "/generations", label: "Generations" },
+  { href: "/calendar", label: "Calendar" },
   { href: "/map", label: "Map" },
 ];
 
