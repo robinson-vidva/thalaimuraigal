@@ -32,75 +32,96 @@ export default function TreePage() {
   useEffect(() => {
     if (containerRef.current) {
       const { width } = containerRef.current.getBoundingClientRect();
-      setTranslate({ x: width / 2, y: 60 });
+      setTranslate({ x: width / 2, y: 80 });
     }
   }, [loading]);
 
   const renderCustomNode = useCallback(
     ({ nodeDatum }: { nodeDatum: TreeNode }) => {
       const gender = nodeDatum.attributes?.gender;
-      const bgColor =
-        gender === "M" ? "#92400e" : gender === "F" ? "#d97706" : "#78716c";
       const hasSpouse = !!nodeDatum.attributes?.spouse;
-      const cardWidth = hasSpouse ? 240 : 140;
+
+      // Colors
+      const accentColor = gender === "M" ? "#b45309" : gender === "F" ? "#d97706" : "#78716c";
+      const bgGradient = gender === "M" ? "#fef3c7" : gender === "F" ? "#fff7ed" : "#f5f5f4";
+
+      const cardWidth = hasSpouse ? 220 : 150;
+      const cardHeight = hasSpouse ? 70 : 55;
       const cardX = -cardWidth / 2;
+      const cardY = -cardHeight / 2;
+
+      const initials = nodeDatum.name.split(" ").map((n) => n[0]).join("").slice(0, 2);
 
       return (
         <g>
-          {/* Card background */}
+          {/* Shadow */}
           <rect
-            x={cardX}
-            y={-35}
+            x={cardX + 2}
+            y={cardY + 3}
             width={cardWidth}
-            height={hasSpouse ? 75 : 65}
-            rx={10}
-            ry={10}
-            fill="white"
-            stroke="#fbbf24"
-            strokeWidth={2}
-            filter="url(#shadow)"
+            height={cardHeight}
+            rx={12}
+            fill="rgba(0,0,0,0.06)"
           />
 
-          {/* Person circle */}
+          {/* Card */}
+          <rect
+            x={cardX}
+            y={cardY}
+            width={cardWidth}
+            height={cardHeight}
+            rx={12}
+            fill={bgGradient}
+            stroke={accentColor}
+            strokeWidth={1.5}
+          />
+
+          {/* Left accent bar */}
+          <rect
+            x={cardX}
+            y={cardY}
+            width={5}
+            height={cardHeight}
+            rx={2}
+            fill={accentColor}
+          />
+
+          {/* Avatar circle */}
           <circle
-            cx={hasSpouse ? cardX + 35 : 0}
+            cx={cardX + 28}
             cy={0}
-            r={18}
-            fill={bgColor}
-            stroke="white"
-            strokeWidth={2}
+            r={15}
+            fill={accentColor}
           />
           <text
-            x={hasSpouse ? cardX + 35 : 0}
-            y={5}
+            x={cardX + 28}
+            y={4}
             fill="white"
-            fontSize={11}
+            fontSize={10}
             fontWeight="bold"
             textAnchor="middle"
           >
-            {nodeDatum.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+            {initials}
           </text>
 
-          {/* Person name */}
+          {/* Name */}
           <text
-            x={hasSpouse ? cardX + 60 : 0}
-            y={-15}
-            fill="#1c1917"
+            x={cardX + 50}
+            y={hasSpouse ? -10 : -3}
+            fill="#292524"
             fontSize={11}
             fontWeight="700"
-            textAnchor={hasSpouse ? "start" : "middle"}
           >
             {nodeDatum.name}
           </text>
 
-          {/* Dates */}
+          {/* Dates below name */}
           {nodeDatum.attributes?.born && (
             <text
-              x={hasSpouse ? cardX + 60 : 0}
-              y={-3}
-              fill="#a1a1aa"
+              x={cardX + 50}
+              y={hasSpouse ? 3 : 10}
+              fill="#78716c"
               fontSize={9}
-              textAnchor={hasSpouse ? "start" : "middle"}
             >
               {nodeDatum.attributes.born}
               {nodeDatum.attributes.died ? ` – ${nodeDatum.attributes.died}` : ""}
@@ -110,25 +131,31 @@ export default function TreePage() {
           {/* Spouse section */}
           {hasSpouse && (
             <>
-              {/* Heart / connector */}
+              {/* Divider line */}
+              <line
+                x1={cardX + 15}
+                y1={14}
+                x2={cardX + cardWidth - 15}
+                y2={14}
+                stroke={accentColor}
+                strokeWidth={0.5}
+                strokeOpacity={0.3}
+              />
+              {/* Heart + spouse name */}
               <text
-                x={cardX + 35}
+                x={cardX + 18}
                 y={28}
-                fill="#f59e0b"
-                fontSize={10}
-                textAnchor="middle"
+                fill={accentColor}
+                fontSize={9}
               >
                 ♥
               </text>
-
-              {/* Spouse name */}
               <text
-                x={cardX + 50}
-                y={30}
+                x={cardX + 30}
+                y={28}
                 fill="#78716c"
                 fontSize={10}
-                fontWeight="600"
-                textAnchor="start"
+                fontWeight="500"
               >
                 {nodeDatum.attributes?.spouse}
               </text>
@@ -137,28 +164,24 @@ export default function TreePage() {
 
           {/* Generation badge */}
           {nodeDatum.attributes?.generation && (
-            <rect
-              x={cardX + cardWidth - 28}
-              y={-33}
-              width={24}
-              height={16}
-              rx={8}
-              fill="#fef3c7"
-              stroke="#f59e0b"
-              strokeWidth={1}
-            />
-          )}
-          {nodeDatum.attributes?.generation && (
-            <text
-              x={cardX + cardWidth - 16}
-              y={-21}
-              fill="#92400e"
-              fontSize={8}
-              fontWeight="bold"
-              textAnchor="middle"
-            >
-              G{nodeDatum.attributes.generation}
-            </text>
+            <>
+              <circle
+                cx={cardX + cardWidth - 12}
+                cy={cardY + 12}
+                r={9}
+                fill={accentColor}
+              />
+              <text
+                x={cardX + cardWidth - 12}
+                y={cardY + 15}
+                fill="white"
+                fontSize={7}
+                fontWeight="bold"
+                textAnchor="middle"
+              >
+                G{nodeDatum.attributes.generation}
+              </text>
+            </>
           )}
 
           {/* Clickable overlay */}
@@ -166,9 +189,9 @@ export default function TreePage() {
             <a href={`/persons/${nodeDatum._id}`}>
               <rect
                 x={cardX}
-                y={-35}
+                y={cardY}
                 width={cardWidth}
-                height={hasSpouse ? 75 : 65}
+                height={cardHeight}
                 fill="transparent"
                 style={{ cursor: "pointer" }}
               />
@@ -212,33 +235,30 @@ export default function TreePage() {
     <div>
       <h1 className="text-2xl font-bold text-amber-900 mb-2">Family Tree</h1>
       <p className="text-sm text-gray-500 mb-4">
-        Drag to pan, scroll to zoom, click nodes to expand/collapse. Click a name to view profile.
+        Drag to pan, scroll to zoom. Click a card to view profile.
       </p>
       <div
         ref={containerRef}
-        className="bg-gradient-to-b from-amber-50 to-white rounded-lg shadow-md border border-amber-200"
-        style={{ width: "100%", height: "75vh" }}
+        className="rounded-xl shadow-lg border border-amber-100 overflow-hidden"
+        style={{
+          width: "100%",
+          height: "75vh",
+          background: "linear-gradient(180deg, #fffbeb 0%, #ffffff 40%, #fefce8 100%)",
+        }}
       >
-        <svg style={{ position: "absolute", width: 0, height: 0 }}>
-          <defs>
-            <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#00000015" />
-            </filter>
-          </defs>
-        </svg>
         <Tree
           data={data}
           translate={translate}
           orientation="vertical"
           pathFunc="step"
           collapsible={true}
-          separation={{ siblings: 1.8, nonSiblings: 2.2 }}
-          nodeSize={{ x: 280, y: 130 }}
+          separation={{ siblings: 1.5, nonSiblings: 2 }}
+          nodeSize={{ x: 260, y: 110 }}
           renderCustomNodeElement={(rd3tProps) =>
             renderCustomNode(rd3tProps as { nodeDatum: TreeNode })
           }
-          pathClassFunc={() => "stroke-amber-400"}
-          zoom={0.85}
+          pathClassFunc={() => "!stroke-amber-300"}
+          zoom={0.9}
         />
       </div>
     </div>
