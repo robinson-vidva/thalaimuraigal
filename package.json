@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "NODE_ENV=production next build",
+    "build": "prisma generate && NODE_ENV=production next build",
+    "db:push-turso": "npx tsx scripts/push-to-turso.ts",
     "start": "next start",
     "lint": "next lint",
     "db:migrate": "npx prisma migrate dev",
@@ -16,6 +17,8 @@
     "seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@libsql/client": "^0.8.0",
+    "@prisma/adapter-libsql": "^5.22.0",
     "@prisma/client": "^5.22.0",
     "dotenv": "^16.4.0",
     "next": "14.2.18",
