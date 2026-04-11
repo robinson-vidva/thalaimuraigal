@@ -30,11 +30,13 @@ const H_GAP = 30;        // min horizontal gap between any two non-related cards
 const SPOUSE_GAP = 28;   // horizontal gap between married spouses
 const V_GAP = 70;        // vertical gap between generation rows
 const ROW_HEIGHT = CARD_H + V_GAP;
-// Initial zoom for the canvas. 1.8 keeps cards big enough to read names
-// and dates on the first render; the user can zoom out with the wheel or
-// the "-" button if they need to see the whole tree at once. Reset button
-// returns to this same value.
-const DEFAULT_ZOOM = 1.8;
+// Initial zoom for the canvas. 1.0 = one CSS pixel per layout unit, which
+// (now that the SVG is sized to its intrinsic pixel dimensions rather than
+// a fit-to-container viewBox) means every card renders at its natural
+// CARD_W × CARD_H size regardless of how many people share the canvas.
+// The user can zoom in/out freely with the wheel or the ± buttons; the
+// reset button returns here.
+const DEFAULT_ZOOM = 1;
 
 // Minimum center-to-center distance required in the same row to avoid visual collision.
 const MIN_ROW_STRIDE = CARD_W + H_GAP;
