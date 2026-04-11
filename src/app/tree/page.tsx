@@ -1022,8 +1022,33 @@ export default function TreePage() {
         frontier = next;
       }
 
-      // Add immediate spouses of everyone in the bloodline set, but
-      // stop there — we don't walk into the spouse's own family.
+      // Add the focus person's own siblings. They share a parent with X
+      // and are blood relatives in every ordinary sense of the word, so
+      // they belong in a "bloodline" view even though they aren't on the
+      // strict ancestor/descendant axis. Note this only runs for the
+      // focus person — we intentionally don't recurse sibling-of-ancestor
+      // logic, because that would sweep up aunts, uncles, great-aunts,
+      // cousins, and eventually the entire extended family. If the user
+      // wants to see aunts/uncles they can focus on a parent with ↑0/↓1
+      // (which already worked before this change and still does). The
+      // siblings' DESCENDANTS (nieces, nephews) are also not walked —
+      // those are one rung out from the bloodline axis and belong to
+      // the sibling's own ↓ walk, not the focus person's.
+      const focusPerson = byId.get(personId);
+      if (focusPerson) {
+        for (const parentId of focusPerson.parentIds) {
+          const parent = byId.get(parentId);
+          if (!parent) continue;
+          for (const sibId of parent.childIds) {
+            if (sibId === personId) continue;
+            visible.add(sibId);
+          }
+        }
+      }
+
+      // Add immediate spouses of everyone in the bloodline set (including
+      // the siblings we just added, so their spouses come along too).
+      // We stop there — we don't walk into the spouse's own family.
       const spouseIdsToAdd: string[] = [];
       for (const id of visible) {
         const p = byId.get(id);
