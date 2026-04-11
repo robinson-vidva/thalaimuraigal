@@ -3,239 +3,264 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 
-interface Partner {
-  name: string;
-  attributes?: Record<string, string>;
-  _id?: string;
-  // When present, a linear chain of this partner's own ancestors going upward
-  // (closest first). Rendered as a vertical stack of cards above the partner
-  // card, so that spouses with their own known lineage don't end up as
-  // disconnected roots elsewhere in the tree.
-  ancestors?: Partner[];
+// ── Data shape (mirrors /api/tree) ──
+interface TreePerson {
+  id: string;
+  firstName: string;
+  lastName: string | null;
+  gender: string | null;
+  dateOfBirth: string | null;
+  dateOfDeath: string | null;
+  generation: number | null;
+  parentIds: string[];
+  spouseIds: string[];
+  childIds: string[];
 }
 
-interface TreeNode {
-  name: string;
-  attributes?: Record<string, string>;
-  children?: TreeNode[];
-  _id?: string;
-  partner?: Partner;
-}
-
-interface FlatNode {
-  node: TreeNode | Partner;
+interface Placement {
+  person: TreePerson;
   x: number;
-  y: number;
-}
-
-interface Connector {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
-
-interface Marriage {
-  x1: number;
-  x2: number;
   y: number;
 }
 
 // ── Layout constants ──
 const CARD_W = 220;
 const CARD_H = 54;
-const PAIR_GAP = 28;              // horizontal gap between spouses inside a couple
-const PAIR_GAP_WITH_ANCESTOR = 280; // wider gap when the partner has their own ancestor chain, so their chain doesn't overlap the primary's ancestor above the midpoint
-const H_GAP = 30;                 // horizontal gap between sibling subtrees
-const V_GAP = 70;                 // vertical gap between generations
+const H_GAP = 30;        // min horizontal gap between any two non-related cards in the same row
+const SPOUSE_GAP = 28;   // horizontal gap between married spouses
+const V_GAP = 70;        // vertical gap between generation rows
+const ROW_HEIGHT = CARD_H + V_GAP;
 
-// When the partner has their own upward ancestor chain we spread the couple
-// further apart so the chain above the partner card doesn't visually collide
-// with whatever parent card is already sitting above the couple midpoint.
-function pairGapFor(node: TreeNode): number {
-  return node.partner?.ancestors && node.partner.ancestors.length > 0
-    ? PAIR_GAP_WITH_ANCESTOR
-    : PAIR_GAP;
-}
+// Minimum center-to-center distance required in the same row to avoid visual collision.
+const MIN_ROW_STRIDE = CARD_W + H_GAP;
 
-// A person + their spouse takes two cards side by side.
-function pairWidth(node: TreeNode): number {
-  return node.partner ? 2 * CARD_W + pairGapFor(node) : CARD_W;
-}
+// ────────────────────────────────────────────────────────────────────────────
+// Layout engine
+// ────────────────────────────────────────────────────────────────────────────
+// Family trees are DAGs, not strict trees — a couple can be the merge point of
+// two separate ancestral lineages, and any person should appear in the diagram
+// exactly once regardless of how many ways their lineage connects. The layout
+// below places every person on a horizontal row indexed by their `generation`
+// value (already computed by recalculateGenerations()), and within a row uses
+// a BFS walk from a seed person to position relatives adjacent to each other
+// with per-row collision avoidance. Lines are then drawn between placed cards
+// directly, so every parent→child connector lands on the specific descendant
+// rather than on some synthetic "couple midpoint".
+function computePlacements(persons: TreePerson[]): {
+  placements: Map<string, Placement>;
+  drawnSpousePairs: Array<[string, string]>;
+} {
+  // Only persons with a generation number participate in the grid. Unlinked
+  // persons (no parents, no spouse, not the reference person's descendant) are
+  // still visible in the table view and profile pages; the tree view quietly
+  // omits them until they get linked.
+  const linked = persons.filter((p) => p.generation !== null);
+  const placements = new Map<string, Placement>();
+  if (linked.length === 0) return { placements, drawnSpousePairs: [] };
 
-// ── Recursive layout engine ──
-// Returns the width of the subtree and sets x positions relative to center
-interface LayoutResult {
-  node: TreeNode;
-  relX: number; // relative x (center of card, 0 = center of subtree)
-  depth: number;
-  width: number;
-  children: LayoutResult[];
-}
+  const byId = new Map(linked.map((p) => [p.id, p]));
+  const genY = (gen: number) => gen * ROW_HEIGHT;
 
-function computeLayout(node: TreeNode, depth: number): LayoutResult {
-  const kids = (node.children || []).map((c) => computeLayout(c, depth + 1));
-  const selfW = pairWidth(node);
+  // Tracks the right edge (x + CARD_W/2 + H_GAP) of the last placement in a
+  // generation row, so new placements in that row are never pushed left of it.
+  const rowCursor = new Map<number, number>();
 
-  if (kids.length === 0) {
-    return { node, relX: 0, depth, width: selfW, children: [] };
+  function collides(x: number, gen: number, ignoreId?: string): boolean {
+    const y = genY(gen);
+    for (const p of placements.values()) {
+      if (p.y !== y) continue;
+      if (ignoreId && p.person.id === ignoreId) continue;
+      if (Math.abs(p.x - x) < MIN_ROW_STRIDE) return true;
+    }
+    return false;
   }
 
-  // Total width of children placed side by side
-  const totalChildW = kids.reduce((s, k, i) => s + k.width + (i > 0 ? H_GAP : 0), 0);
-  const subtreeW = Math.max(selfW, totalChildW);
-
-  // Position children left-to-right, centered under parent
-  let cursor = -totalChildW / 2;
-  for (const k of kids) {
-    k.relX = cursor + k.width / 2;
-    cursor += k.width + H_GAP;
+  function nextFreeXAtOrRightOf(x: number, gen: number): number {
+    let tryX = x;
+    let guard = 0;
+    while (collides(tryX, gen)) {
+      tryX += MIN_ROW_STRIDE;
+      if (++guard > 500) break; // defensive cap
+    }
+    return tryX;
   }
 
-  return { node, relX: 0, depth, width: subtreeW, children: kids };
-}
+  function place(person: TreePerson, preferredX: number): Placement {
+    const gen = person.generation!;
+    const y = genY(gen);
+    const minCursor = rowCursor.get(gen);
+    let x = minCursor !== undefined ? Math.max(preferredX, minCursor) : preferredX;
+    x = nextFreeXAtOrRightOf(x, gen);
+    const placement: Placement = { person, x, y };
+    placements.set(person.id, placement);
+    rowCursor.set(gen, x + MIN_ROW_STRIDE);
+    return placement;
+  }
 
-// ── Flatten to absolute positions ──
-// `absX` represents the CENTER of the node's slot. For a couple that's the
-// midpoint between the two spouse cards; for a single person it's the card
-// center. Children always descend from this midpoint so the generation flow
-// stays straight.
-function flatten(
-  lr: LayoutResult,
-  parentAbsX: number,
-  absY: number
-): { nodes: FlatNode[]; connectors: Connector[]; marriages: Marriage[] } {
-  const absX = parentAbsX + lr.relX;
-  const hasPartner = !!lr.node.partner;
-  const nodes: FlatNode[] = [];
-  const marriages: Marriage[] = [];
+  function preferredX(person: TreePerson): number {
+    // 1) Already-placed spouse: land right next to them (marriage adjacency).
+    const placedSpouses = person.spouseIds
+      .map((id) => placements.get(id))
+      .filter((p): p is Placement => !!p);
+    if (placedSpouses.length > 0) {
+      const rightmost = placedSpouses.reduce((a, b) => (a.x > b.x ? a : b));
+      return rightmost.x + CARD_W + SPOUSE_GAP;
+    }
+    // 2) Already-placed parents: center under the average of their x positions.
+    const placedParents = person.parentIds
+      .map((id) => placements.get(id))
+      .filter((p): p is Placement => !!p);
+    if (placedParents.length > 0) {
+      const avg = placedParents.reduce((s, p) => s + p.x, 0) / placedParents.length;
+      return avg;
+    }
+    // 3) Already-placed children: center above them (we're the parent being
+    //    added after the child's own subtree is already anchored).
+    const placedChildren = person.childIds
+      .map((id) => placements.get(id))
+      .filter((p): p is Placement => !!p);
+    if (placedChildren.length > 0) {
+      const avg = placedChildren.reduce((s, p) => s + p.x, 0) / placedChildren.length;
+      return avg;
+    }
+    // 4) Brand-new disconnected component: start to the right of everything
+    //    already placed so it gets its own horizontal band.
+    let rightmost = 0;
+    let anyPlaced = false;
+    for (const cursor of rowCursor.values()) {
+      anyPlaced = true;
+      if (cursor > rightmost) rightmost = cursor;
+    }
+    return anyPlaced ? rightmost + CARD_W : 0;
+  }
 
-  const connectors: Connector[] = [];
+  // Seeds: deterministic traversal order. Process oldest generations first
+  // (smallest `generation` value — the tree's oldest known ancestors), then
+  // break ties by id to keep renders stable across reloads.
+  const seeds = [...linked].sort((a, b) => {
+    const ag = a.generation!;
+    const bg = b.generation!;
+    if (ag !== bg) return ag - bg;
+    return a.id.localeCompare(b.id);
+  });
 
-  if (hasPartner) {
-    // Two cards side-by-side, separated by pairGapFor(node). The gap widens
-    // when the partner has their own ancestor chain, to keep that chain from
-    // overlapping with whatever parent card sits above the couple midpoint.
-    const gap = pairGapFor(lr.node);
-    const offset = (CARD_W + gap) / 2;
-    const primaryX = absX - offset;
-    const partnerX = absX + offset;
-    nodes.push({ node: lr.node, x: primaryX, y: absY });
-    nodes.push({ node: lr.node.partner!, x: partnerX, y: absY });
-    // Marriage line between the inner edges of the two cards, vertically centered.
-    marriages.push({
-      x1: primaryX + CARD_W / 2,
-      x2: partnerX - CARD_W / 2,
-      y: absY + CARD_H / 2,
-    });
+  const queue: TreePerson[] = [];
+  const enqueued = new Set<string>();
 
-    // Render the partner's own ancestor chain as a vertical stack of cards
-    // going upward from the partner card. Each link is a vertical connector
-    // from the ancestor's bottom-center to the descendant's top-center.
-    const ancestors = lr.node.partner?.ancestors ?? [];
-    if (ancestors.length > 0) {
-      let prevTopY = absY;            // top of the partner card
-      let ancY = absY - V_GAP - CARD_H; // y of the first ancestor above
-      for (const anc of ancestors) {
-        nodes.push({ node: anc, x: partnerX, y: ancY });
-        connectors.push({
-          x1: partnerX,
-          y1: ancY + CARD_H,
-          x2: partnerX,
-          y2: prevTopY,
-        });
-        prevTopY = ancY;
-        ancY -= V_GAP + CARD_H;
+  for (const seed of seeds) {
+    if (placements.has(seed.id)) continue;
+    queue.push(seed);
+    enqueued.add(seed.id);
+    while (queue.length > 0) {
+      const person = queue.shift()!;
+      if (placements.has(person.id)) continue;
+      place(person, preferredX(person));
+      // Enqueue unvisited relatives. Spouses first so they land adjacent
+      // immediately; children next so lineages descend cleanly; parents last
+      // since in the oldest-first pass they're usually already placed.
+      const relatives = [
+        ...person.spouseIds,
+        ...person.childIds,
+        ...person.parentIds,
+      ];
+      for (const rid of relatives) {
+        if (!byId.has(rid)) continue;
+        if (placements.has(rid)) continue;
+        if (enqueued.has(rid)) continue;
+        queue.push(byId.get(rid)!);
+        enqueued.add(rid);
       }
     }
-  } else {
-    nodes.push({ node: lr.node, x: absX, y: absY });
   }
 
-  const childY = absY + CARD_H + V_GAP;
-
-  for (const kid of lr.children) {
-    const kidAbsX = absX + kid.relX;
-    // When the child is a couple, the parent-child line must land on the
-    // specific child (the primary spouse) rather than the couple midpoint.
-    // The parent's descendant is the individual, not the marriage that
-    // individual later formed — the marriage didn't inherit parenthood, the
-    // person did. For single-person children the endpoint is the card center
-    // as usual.
-    const kidConnectX = kid.node.partner
-      ? kidAbsX - (CARD_W + pairGapFor(kid.node)) / 2
-      : kidAbsX;
-    connectors.push({
-      x1: absX,
-      y1: absY + CARD_H,
-      x2: kidConnectX,
-      y2: childY,
-    });
-
-    const sub = flatten(kid, absX, childY);
-    nodes.push(...sub.nodes);
-    connectors.push(...sub.connectors);
-    marriages.push(...sub.marriages);
+  // Deduplicate spouse pairs so each marriage line is drawn once.
+  const drawnSpousePairs: Array<[string, string]> = [];
+  const seenPair = new Set<string>();
+  for (const p of placements.values()) {
+    for (const sid of p.person.spouseIds) {
+      if (!placements.has(sid)) continue;
+      const key = [p.person.id, sid].sort().join("|");
+      if (seenPair.has(key)) continue;
+      seenPair.add(key);
+      drawnSpousePairs.push([p.person.id, sid]);
+    }
   }
 
-  return { nodes, connectors, marriages };
+  return { placements, drawnSpousePairs };
 }
 
-// ── Curved connector path ──
-function connectorPath(c: Connector): string {
-  const midY = (c.y1 + c.y2) / 2;
-  return `M ${c.x1},${c.y1} C ${c.x1},${midY} ${c.x2},${midY} ${c.x2},${c.y2}`;
+// ── Bezier path for parent→child connectors ──
+function parentChildPath(px: number, py: number, cx: number, cy: number): string {
+  const midY = (py + cy) / 2;
+  return `M ${px},${py} C ${px},${midY} ${cx},${midY} ${cx},${cy}`;
 }
 
-// ── Tree card component ──
-// Renders a single person card. Couples are two of these side by side.
-function TreeCard({ node, x, y }: { node: TreeNode | Partner; x: number; y: number }) {
-  const gender = node.attributes?.gender;
+// ── Card component ──
+function TreeCard({ person, x, y }: { person: TreePerson; x: number; y: number }) {
+  const gender = person.gender;
   const accent = gender === "M" ? "#92400e" : gender === "F" ? "#b45309" : "#6b7280";
   const bg = gender === "M" ? "#fffbeb" : gender === "F" ? "#fff7ed" : "#f9fafb";
-  const initials = node.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  const name = `${person.firstName} ${person.lastName ?? ""}`.trim();
+  const initials = name
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  const displayName = name.length > 20 ? name.slice(0, 18) + "..." : name;
 
   return (
     <g transform={`translate(${x - CARD_W / 2}, ${y})`}>
-      {/* Shadow */}
       <rect x={2} y={3} width={CARD_W} height={CARD_H} rx={10} fill="rgba(0,0,0,0.06)" />
-      {/* Card */}
       <rect width={CARD_W} height={CARD_H} rx={10} fill={bg} stroke={accent} strokeWidth={1.5} />
-      {/* Left accent bar */}
       <rect width={4} height={CARD_H} rx={2} fill={accent} />
-      {/* Avatar circle */}
       <circle cx={26} cy={CARD_H / 2} r={14} fill={accent} />
-      <text x={26} y={CARD_H / 2 + 4} fill="white" fontSize={10} fontWeight="bold" textAnchor="middle">{initials}</text>
-      {/* Name */}
-      <text x={48} y={CARD_H / 2 - 3} fill="#1c1917" fontSize={12} fontWeight="700">
-        {node.name.length > 20 ? node.name.slice(0, 18) + "..." : node.name}
+      <text
+        x={26}
+        y={CARD_H / 2 + 4}
+        fill="white"
+        fontSize={10}
+        fontWeight="bold"
+        textAnchor="middle"
+      >
+        {initials}
       </text>
-      {/* Dates */}
-      {node.attributes?.born && (
+      <text x={48} y={CARD_H / 2 - 3} fill="#1c1917" fontSize={12} fontWeight="700">
+        {displayName}
+      </text>
+      {person.dateOfBirth && (
         <text x={48} y={CARD_H / 2 + 10} fill="#a1a1aa" fontSize={9}>
-          {node.attributes.born}{node.attributes.died ? ` - ${node.attributes.died}` : ""}
+          {person.dateOfBirth}
+          {person.dateOfDeath ? ` - ${person.dateOfDeath}` : ""}
         </text>
       )}
-      {/* Generation badge */}
-      {node.attributes?.generation && (
+      {person.generation !== null && (
         <>
           <circle cx={CARD_W - 16} cy={16} r={10} fill={accent} />
-          <text x={CARD_W - 16} y={20} fill="white" fontSize={8} fontWeight="bold" textAnchor="middle">G{node.attributes.generation}</text>
+          <text
+            x={CARD_W - 16}
+            y={20}
+            fill="white"
+            fontSize={8}
+            fontWeight="bold"
+            textAnchor="middle"
+          >
+            G{person.generation}
+          </text>
         </>
       )}
-      {/* Clickable overlay */}
-      {node._id && (
-        <a href={`/persons/${node._id}`} style={{ cursor: "pointer" }}>
-          <rect width={CARD_W} height={CARD_H} fill="transparent" rx={10} />
-        </a>
-      )}
+      <a href={`/persons/${person.id}`} style={{ cursor: "pointer" }}>
+        <rect width={CARD_W} height={CARD_H} fill="transparent" rx={10} />
+      </a>
     </g>
   );
 }
 
-// ── Main page ──
+// ────────────────────────────────────────────────────────────────────────────
+// Main page
+// ────────────────────────────────────────────────────────────────────────────
 export default function TreePage() {
-  const [treeData, setTreeData] = useState<TreeNode[]>([]);
+  const [persons, setPersons] = useState<TreePerson[]>([]);
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -246,99 +271,139 @@ export default function TreePage() {
   useEffect(() => {
     fetch("/api/tree")
       .then((r) => r.json())
-      .then((data) => { setTreeData(data); setLoading(false); })
+      .then((data) => {
+        setPersons(Array.isArray(data) ? data : []);
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, []);
 
-  // ── Mouse pan/zoom ──
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     setZoom((z) => Math.max(0.2, Math.min(3, z - e.deltaY * 0.001)));
   }, []);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest("a")) return; // don't drag on links
-    setDragging(true);
-    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-  }, [pan]);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if ((e.target as HTMLElement).closest("a")) return;
+      setDragging(true);
+      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    },
+    [pan]
+  );
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!dragging) return;
-    setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
-  }, [dragging, dragStart]);
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!dragging) return;
+      setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+    },
+    [dragging, dragStart]
+  );
 
   const handleMouseUp = useCallback(() => setDragging(false), []);
 
-  // ── Touch pan ──
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      const t = e.touches[0];
-      touchStartRef.current = { x: t.clientX - pan.x, y: t.clientY - pan.y };
-    }
-  }, [pan]);
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        touchStartRef.current = { x: t.clientX - pan.x, y: t.clientY - pan.y };
+      }
+    },
+    [pan]
+  );
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 1 && touchStartRef.current) {
       const t = e.touches[0];
-      setPan({ x: t.clientX - touchStartRef.current.x, y: t.clientY - touchStartRef.current.y });
+      setPan({
+        x: t.clientX - touchStartRef.current.x,
+        y: t.clientY - touchStartRef.current.y,
+      });
     }
   }, []);
 
-  const handleTouchEnd = useCallback(() => { touchStartRef.current = null; }, []);
+  const handleTouchEnd = useCallback(() => {
+    touchStartRef.current = null;
+  }, []);
 
-  // ── Zoom controls ──
   const zoomIn = () => setZoom((z) => Math.min(3, z + 0.2));
   const zoomOut = () => setZoom((z) => Math.max(0.2, z - 0.2));
-  const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+  const resetView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
 
   if (loading) {
-    return <div className="text-center py-16"><p className="text-gray-500">Loading family tree...</p></div>;
+    return (
+      <div className="text-center py-16">
+        <p className="text-gray-500">Loading family tree...</p>
+      </div>
+    );
   }
 
-  if (treeData.length === 0) {
+  const { placements, drawnSpousePairs } = computePlacements(persons);
+  const allPlacements = Array.from(placements.values());
+
+  if (allPlacements.length === 0) {
     return (
       <div className="text-center py-16">
         <h1 className="text-2xl font-bold text-amber-900 mb-4">Family Tree</h1>
         <p className="text-gray-500">
-          No family data yet.{" "}
-          <Link href="/persons/new" className="text-amber-700 underline">Add members</Link>{" "}
+          No linked family data yet.{" "}
+          <Link href="/persons/new" className="text-amber-700 underline">
+            Add members
+          </Link>{" "}
           and link them to build the tree.
         </p>
       </div>
     );
   }
 
-  // ── Layout multiple root trees side by side (no synthetic "Family" node) ──
-  const layouts = treeData.map((root) => computeLayout(root, 0));
-
-  const allNodes: FlatNode[] = [];
-  const allConnectors: Connector[] = [];
-  const allMarriages: Marriage[] = [];
-
-  // Place each root tree next to each other horizontally
-  let offsetX = 0;
-  for (const lr of layouts) {
-    const { nodes, connectors, marriages } = flatten(lr, offsetX, 0);
-    allNodes.push(...nodes);
-    allConnectors.push(...connectors);
-    allMarriages.push(...marriages);
-    offsetX += lr.width + H_GAP * 2;
-  }
-
-  // Calculate SVG bounds
+  // ── Bounds ──
   const pad = 80;
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const n of allNodes) {
-    minX = Math.min(minX, n.x - CARD_W / 2);
-    maxX = Math.max(maxX, n.x + CARD_W / 2);
-    minY = Math.min(minY, n.y);
-    maxY = Math.max(maxY, n.y + CARD_H);
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
+  for (const p of allPlacements) {
+    minX = Math.min(minX, p.x - CARD_W / 2);
+    maxX = Math.max(maxX, p.x + CARD_W / 2);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y + CARD_H);
   }
   const svgW = maxX - minX + pad * 2;
   const svgH = maxY - minY + pad * 2;
   const oX = -minX + pad;
   const oY = -minY + pad;
+
+  // ── Build parent→child connectors from the data ──
+  // Every parent_child row whose BOTH endpoints are placed contributes a line.
+  // The line goes from the parent's bottom-center directly to the child's
+  // top-center. When the child has two placed parents, we draw TWO lines
+  // (one from each parent) — that's the honest representation, not a
+  // midpoint fudge.
+  interface ParentChildEdge {
+    px: number;
+    py: number;
+    cx: number;
+    cy: number;
+    key: string;
+  }
+  const parentChildEdges: ParentChildEdge[] = [];
+  for (const p of allPlacements) {
+    for (const childId of p.person.childIds) {
+      const child = placements.get(childId);
+      if (!child) continue;
+      parentChildEdges.push({
+        px: p.x,
+        py: p.y + CARD_H,
+        cx: child.x,
+        cy: child.y,
+        key: `${p.person.id}->${childId}`,
+      });
+    }
+  }
 
   return (
     <div>
@@ -347,7 +412,6 @@ export default function TreePage() {
         Drag to pan, scroll to zoom. Click a card to view profile.
       </p>
       <div className="relative">
-        {/* Tree canvas */}
         <div
           ref={containerRef}
           className="rounded-xl shadow-lg border border-amber-200 overflow-hidden select-none"
@@ -355,7 +419,8 @@ export default function TreePage() {
             width: "100%",
             height: "min(75vh, calc(100dvh - 180px))",
             minHeight: "400px",
-            background: "linear-gradient(180deg, #fffbeb 0%, #ffffff 50%, #fefce8 100%)",
+            background:
+              "linear-gradient(180deg, #fffbeb 0%, #ffffff 50%, #fefce8 100%)",
             cursor: dragging ? "grabbing" : "grab",
           }}
           onWheel={handleWheel}
@@ -376,16 +441,11 @@ export default function TreePage() {
               transformOrigin: "center center",
             }}
           >
-            {/* Parent-child curved connectors */}
-            {allConnectors.map((c, i) => (
+            {/* Parent-child curves */}
+            {parentChildEdges.map((e) => (
               <path
-                key={`c-${i}`}
-                d={connectorPath({
-                  x1: c.x1 + oX,
-                  y1: c.y1 + oY,
-                  x2: c.x2 + oX,
-                  y2: c.y2 + oY,
-                })}
+                key={e.key}
+                d={parentChildPath(e.px + oX, e.py + oY, e.cx + oX, e.cy + oY)}
                 fill="none"
                 stroke="#d97706"
                 strokeWidth={2}
@@ -393,14 +453,19 @@ export default function TreePage() {
               />
             ))}
 
-            {/* Marriage connectors (horizontal line + heart between spouses) */}
-            {allMarriages.map((m, i) => {
-              const x1 = m.x1 + oX;
-              const x2 = m.x2 + oX;
-              const y = m.y + oY;
+            {/* Marriage lines (one per unique pair) */}
+            {drawnSpousePairs.map(([aId, bId]) => {
+              const a = placements.get(aId)!;
+              const b = placements.get(bId)!;
+              // Sort so the left spouse is always "a" for line drawing.
+              const left = a.x <= b.x ? a : b;
+              const right = a.x <= b.x ? b : a;
+              const x1 = left.x + CARD_W / 2 + oX;
+              const x2 = right.x - CARD_W / 2 + oX;
+              const y = left.y + CARD_H / 2 + oY;
               const midX = (x1 + x2) / 2;
               return (
-                <g key={`m-${i}`}>
+                <g key={`m-${aId}-${bId}`}>
                   <line
                     x1={x1}
                     y1={y}
@@ -410,20 +475,35 @@ export default function TreePage() {
                     strokeWidth={2}
                     strokeOpacity={0.6}
                   />
-                  <circle cx={midX} cy={y} r={7} fill="#fff7ed" stroke="#b45309" strokeWidth={1.2} />
-                  <text x={midX} y={y + 3} fill="#b45309" fontSize={10} textAnchor="middle">&#9829;</text>
+                  <circle
+                    cx={midX}
+                    cy={y}
+                    r={7}
+                    fill="#fff7ed"
+                    stroke="#b45309"
+                    strokeWidth={1.2}
+                  />
+                  <text
+                    x={midX}
+                    y={y + 3}
+                    fill="#b45309"
+                    fontSize={10}
+                    textAnchor="middle"
+                  >
+                    &#9829;
+                  </text>
                 </g>
               );
             })}
 
-            {/* Cards */}
-            {allNodes.map((n, i) => (
-              <TreeCard key={i} node={n.node} x={n.x + oX} y={n.y + oY} />
+            {/* Person cards */}
+            {allPlacements.map((p) => (
+              <TreeCard key={p.person.id} person={p.person} x={p.x + oX} y={p.y + oY} />
             ))}
           </svg>
         </div>
 
-        {/* Zoom/Pan controls */}
+        {/* Zoom controls */}
         <div className="absolute bottom-4 right-4 flex flex-col gap-1.5">
           <button
             onClick={zoomIn}
@@ -445,12 +525,16 @@ export default function TreePage() {
             title="Reset view"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
             </svg>
           </button>
         </div>
 
-        {/* Zoom level indicator */}
         <div className="absolute bottom-4 left-4 text-xs text-gray-400 bg-white/80 px-2 py-1 rounded-md border border-gray-200">
           {Math.round(zoom * 100)}%
         </div>
