@@ -750,46 +750,117 @@ export default function TreePage() {
     [pan]
   );
 
-  // Walk up (or down) the parent/child graph from a seed person and return
-  // every ancestor (or descendant) id. These drive the Hide-ancestors and
-  // Hide-descendants menu actions. Walks are limited to `persons` so they
-  // can't escape into dangling ids.
-  const ancestorsOf = useCallback(
+  // Helpers that compute the full set of ids to drop for the two menu
+  // actions. They deliberately go BEYOND strict ancestors / descendants —
+  // the menu intent is "clean up the upper (or lower) half of the tree
+  // relative to this person", so we also sweep up collateral relatives
+  // (aunts, uncles, cousins, siblings-of-focus, etc.) and their in-laws
+  // that would otherwise end up as dangling orphans once their parents
+  // are hidden. The focus person and their descendants are protected so
+  // Hide-ancestors never removes the person you right-clicked.
+
+  // "Keep" set = the focus person + every descendant below them. These
+  // are the people we MUST NOT hide. Shared by both helpers.
+  const focusAndDescendants = useCallback(
     (personId: string): Set<string> => {
       const byId = new Map(persons.map((p) => [p.id, p]));
-      const out = new Set<string>();
-      const queue = [personId];
-      while (queue.length > 0) {
-        const cur = queue.shift()!;
+      const keep = new Set<string>();
+      const q = [personId];
+      while (q.length > 0) {
+        const cur = q.shift()!;
+        if (keep.has(cur)) continue;
+        keep.add(cur);
         const p = byId.get(cur);
         if (!p) continue;
-        for (const pid of p.parentIds) {
-          if (out.has(pid)) continue;
-          out.add(pid);
-          queue.push(pid);
-        }
+        for (const c of p.childIds) q.push(c);
       }
-      return out;
+      return keep;
     },
     [persons]
   );
 
-  const descendantsOf = useCallback(
+  // Hide-ancestors set: strict ancestors + every descendant of those
+  // ancestors (aunts/uncles/cousins/siblings of the focus) + shallow
+  // spouses of anyone in the hidden set. We do NOT walk upward from those
+  // spouses — otherwise a cousin marrying into another branch of the tree
+  // would drag that whole branch into the hidden set.
+  const upwardHideSet = useCallback(
     (personId: string): Set<string> => {
       const byId = new Map(persons.map((p) => [p.id, p]));
-      const out = new Set<string>();
-      const queue = [personId];
-      while (queue.length > 0) {
-        const cur = queue.shift()!;
-        const p = byId.get(cur);
-        if (!p) continue;
-        for (const cid of p.childIds) {
-          if (out.has(cid)) continue;
-          out.add(cid);
-          queue.push(cid);
+      const keep = focusAndDescendants(personId);
+
+      // Strict ancestors via parent BFS.
+      const ancestors = new Set<string>();
+      {
+        const q = [personId];
+        while (q.length > 0) {
+          const cur = q.shift()!;
+          const p = byId.get(cur);
+          if (!p) continue;
+          for (const pp of p.parentIds) {
+            if (ancestors.has(pp)) continue;
+            ancestors.add(pp);
+            q.push(pp);
+          }
         }
       }
-      return out;
+      if (ancestors.size === 0) return new Set();
+
+      const toHide = new Set<string>(ancestors);
+      // Walk DOWN from each ancestor and pick up everyone in their
+      // descendant subtree, except the focus's own line.
+      const q: string[] = [...ancestors];
+      while (q.length > 0) {
+        const cur = q.shift()!;
+        const p = byId.get(cur);
+        if (!p) continue;
+        // Spouses of whoever we're hiding — the aunt-by-marriage, the
+        // grandfather's second wife, etc. Added but not traversed.
+        for (const s of p.spouseIds) {
+          if (keep.has(s)) continue;
+          if (toHide.has(s)) continue;
+          toHide.add(s);
+        }
+        for (const c of p.childIds) {
+          if (keep.has(c)) continue;
+          if (toHide.has(c)) continue;
+          toHide.add(c);
+          q.push(c);
+        }
+      }
+      return toHide;
+    },
+    [persons, focusAndDescendants]
+  );
+
+  // Hide-descendants set: strict descendants + shallow spouses of each
+  // descendant (sons- and daughters-in-law). Symmetric to upwardHideSet
+  // but simpler — nothing needs to be protected on the parent side.
+  const downwardHideSet = useCallback(
+    (personId: string): Set<string> => {
+      const byId = new Map(persons.map((p) => [p.id, p]));
+      const descendants = new Set<string>();
+      const root = byId.get(personId);
+      if (!root) return descendants;
+      const q: string[] = [...root.childIds];
+      while (q.length > 0) {
+        const cur = q.shift()!;
+        if (descendants.has(cur)) continue;
+        descendants.add(cur);
+        const p = byId.get(cur);
+        if (!p) continue;
+        for (const c of p.childIds) q.push(c);
+      }
+      const toHide = new Set<string>(descendants);
+      for (const id of descendants) {
+        const p = byId.get(id);
+        if (!p) continue;
+        for (const s of p.spouseIds) {
+          if (s === personId) continue;
+          toHide.add(s);
+        }
+      }
+      return toHide;
     },
     [persons]
   );
@@ -803,7 +874,7 @@ export default function TreePage() {
 
   const hideAncestors = useCallback(
     (personId: string) => {
-      const ids = ancestorsOf(personId);
+      const ids = upwardHideSet(personId);
       if (ids.size === 0) {
         setContextMenu(null);
         return;
@@ -815,12 +886,12 @@ export default function TreePage() {
       });
       setContextMenu(null);
     },
-    [ancestorsOf]
+    [upwardHideSet]
   );
 
   const hideDescendants = useCallback(
     (personId: string) => {
-      const ids = descendantsOf(personId);
+      const ids = downwardHideSet(personId);
       if (ids.size === 0) {
         setContextMenu(null);
         return;
@@ -832,7 +903,7 @@ export default function TreePage() {
       });
       setContextMenu(null);
     },
-    [descendantsOf]
+    [downwardHideSet]
   );
 
   const hidePerson = useCallback((personId: string) => {
