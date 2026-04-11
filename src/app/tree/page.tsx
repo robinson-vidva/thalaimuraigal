@@ -30,6 +30,11 @@ const H_GAP = 30;        // min horizontal gap between any two non-related cards
 const SPOUSE_GAP = 28;   // horizontal gap between married spouses
 const V_GAP = 70;        // vertical gap between generation rows
 const ROW_HEIGHT = CARD_H + V_GAP;
+// Initial zoom for the canvas. 1.8 keeps cards big enough to read names
+// and dates on the first render; the user can zoom out with the wheel or
+// the "-" button if they need to see the whole tree at once. Reset button
+// returns to this same value.
+const DEFAULT_ZOOM = 1.8;
 
 // Minimum center-to-center distance required in the same row to avoid visual collision.
 const MIN_ROW_STRIDE = CARD_W + H_GAP;
@@ -591,21 +596,13 @@ export default function TreePage() {
   const [dragging, setDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   // People the user has chosen to hide via the context menu. Stored as a
   // Set of person ids; a filtered copy of `persons` with these ids stripped
   // is what gets handed to computePlacements(), so the layout naturally
   // drops them and re-packs the remaining cards without any other changes.
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  // Last-known SVG dimensions from the current render. Stored in a ref
-  // because auto-fit lives in a useEffect that runs AFTER render, so the
-  // effect needs to read the dimensions that were just computed.
-  const boundsRef = useRef<{ w: number; h: number } | null>(null);
-  // We only auto-fit once — on initial load. Afterwards the user's own
-  // pan/zoom is sacred and we never clobber it, even if they hide people
-  // and the tree shrinks. They can always click the reset button to re-fit.
-  const didAutoFitRef = useRef(false);
 
   useEffect(() => {
     fetch("/api/tree")
@@ -616,29 +613,6 @@ export default function TreePage() {
       })
       .catch(() => setLoading(false));
   }, []);
-
-  // Auto-fit on initial load. Runs once after the first real render has
-  // written the bounds into boundsRef.
-  useEffect(() => {
-    if (didAutoFitRef.current) return;
-    if (loading) return;
-    if (persons.length === 0) return;
-    const container = containerRef.current;
-    const bounds = boundsRef.current;
-    if (!container || !bounds) return;
-    const cw = container.clientWidth;
-    const ch = container.clientHeight;
-    if (cw === 0 || ch === 0) return;
-    const padding = 40;
-    const fitX = (cw - padding * 2) / bounds.w;
-    const fitY = (ch - padding * 2) / bounds.h;
-    // Clamp: never zoom ABOVE 1 (small trees stay readable, not huge),
-    // never below the global min (0.2).
-    const fit = Math.max(0.2, Math.min(1, Math.min(fitX, fitY)));
-    setZoom(fit);
-    setPan({ x: 0, y: 0 });
-    didAutoFitRef.current = true;
-  }, [loading, persons.length]);
 
   // Close the context menu on any mousedown outside of it, on scroll, or
   // when Escape is pressed. Uses a data attribute rather than a ref so the
@@ -815,25 +789,11 @@ export default function TreePage() {
 
   const zoomIn = () => setZoom((z) => Math.min(3, z + 0.2));
   const zoomOut = () => setZoom((z) => Math.max(0.2, z - 0.2));
-  // Reset = re-fit the current layout to the current container size. This
-  // recomputes the fit based on whatever is VISIBLE (so after hiding a
-  // chunk of the tree, the reset zooms in to the remaining cards), and
-  // also re-centers the pan.
+  // Reset snaps zoom back to DEFAULT_ZOOM and re-centers the pan. No
+  // auto-fit — the user likes the default 180% level and wants the tree
+  // to stay at that zoom regardless of how many people are visible.
   const resetView = () => {
-    const container = containerRef.current;
-    const bounds = boundsRef.current;
-    if (!container || !bounds) {
-      setZoom(1);
-      setPan({ x: 0, y: 0 });
-      return;
-    }
-    const cw = container.clientWidth;
-    const ch = container.clientHeight;
-    const padding = 40;
-    const fitX = (cw - padding * 2) / bounds.w;
-    const fitY = (ch - padding * 2) / bounds.h;
-    const fit = Math.max(0.2, Math.min(1, Math.min(fitX, fitY)));
-    setZoom(fit);
+    setZoom(DEFAULT_ZOOM);
     setPan({ x: 0, y: 0 });
   };
 
@@ -897,9 +857,6 @@ export default function TreePage() {
   const svgH = maxY - minY + pad * 2;
   const oX = -minX + pad;
   const oY = -minY + pad;
-  // Stash the current SVG size for the auto-fit effect and the reset
-  // button — both need to read dimensions AFTER the layout has run.
-  boundsRef.current = { w: svgW, h: svgH };
 
   // ── Build parent→child connectors from the data ──
   // A child whose two parents are married to each other only gets ONE line,
