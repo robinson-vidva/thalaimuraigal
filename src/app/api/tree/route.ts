@@ -43,8 +43,27 @@ export async function GET() {
 
   const personMap = new Map(persons.map((p) => [p.id, p]));
 
-  // Find root persons (those who have no parents in the data)
-  const roots = persons.filter((p) => !childToParents.has(p.id));
+  // Find root persons. A person is a tree root when:
+  //  1. They have no parents in the data, AND
+  //  2. None of their spouses have parents either.
+  //
+  // The second rule avoids a subtle ordering bug: if someone has no parents
+  // but is married to a person who DOES have parents, their spouse's tree
+  // will naturally absorb them as a partner card. If we still listed them
+  // here, iteration order could cause the "partnerless" spouse to be
+  // processed first, claim their partner, and then the actual ancestor's
+  // subtree would find its child already visited — leaving the ancestor
+  // stranded as a childless root. Excluding these spouses from the root
+  // list keeps the couple anchored under the side of the family that has
+  // known ancestors.
+  const roots = persons.filter((p) => {
+    if (childToParents.has(p.id)) return false;
+    const spouses = spouseMap.get(p.id) || [];
+    for (const sid of spouses) {
+      if (childToParents.has(sid)) return false;
+    }
+    return true;
+  });
 
   // Build tree recursively
   const visited = new Set<string>();
