@@ -62,12 +62,29 @@ export default function LocationSearch({ label, onSelect, placeholder }: Locatio
       setSearching(true);
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(value)}&format=json&addressdetails=1&limit=5`,
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(value)}&format=json&addressdetails=1&limit=8`,
           { headers: { "User-Agent": "Thalaimuraigal/1.0" } }
         );
         const data: LocationResult[] = await res.json();
-        setResults(data);
-        setShowDropdown(data.length > 0);
+        // Nominatim often returns multiple OSM records for the same place
+        // (an admin relation, a place node, a district variant, etc.) that
+        // all render the same display_name. Collapse them to a single
+        // entry by a composite key of display_name + (city|state|country)
+        // so the dropdown doesn't repeat itself.
+        const seen = new Set<string>();
+        const unique: LocationResult[] = [];
+        for (const r of data) {
+          const city = (r.address?.city || r.address?.town || r.address?.village || "").toLowerCase();
+          const state = (r.address?.state || "").toLowerCase();
+          const country = (r.address?.country || "").toLowerCase();
+          const key = `${r.display_name.toLowerCase()}|${city}|${state}|${country}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          unique.push(r);
+          if (unique.length >= 5) break;
+        }
+        setResults(unique);
+        setShowDropdown(unique.length > 0);
       } catch {
         setResults([]);
       } finally {
