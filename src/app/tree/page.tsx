@@ -50,15 +50,77 @@ function computePlacements(persons: TreePerson[]): {
   placements: Map<string, Placement>;
   drawnSpousePairs: Array<[string, string]>;
 } {
-  // Only persons with a generation number participate in the grid. Unlinked
-  // persons (no parents, no spouse, not the reference person's descendant) are
-  // still visible in the table view and profile pages; the tree view quietly
-  // omits them until they get linked.
-  const linked = persons.filter((p) => p.generation !== null);
   const placements = new Map<string, Placement>();
-  if (linked.length === 0) return { placements, drawnSpousePairs: [] };
+  if (persons.length === 0) return { placements, drawnSpousePairs: [] };
 
-  const byId = new Map(linked.map((p) => [p.id, p]));
+  const byId = new Map(persons.map((p) => [p.id, p]));
+
+  // ── Effective generation ──────────────────────────────────────────────
+  // recalculateGenerations() in the API is the usual source of the
+  // `generation` column, but it can leave rows as null when a person
+  // isn't in the same connected component as the reference person.
+  // Previously we filtered those rows out of the tree entirely — which
+  // hid real people from the diagram depending on which reference was
+  // active, and was exactly the "where is Sherin and Robinson" bug.
+  //
+  // Instead, derive an effective generation for every person, seeded by
+  // the stored value and then iteratively pulled from any relative that
+  // already has one (spouse → same gen, parent → gen+1, child → gen-1).
+  // Anyone still without a generation after this pass gets bucketed into
+  // a "floating" row below the main tree so they remain visible.
+  const effectiveGen = new Map<string, number>();
+  for (const p of persons) {
+    if (typeof p.generation === "number") effectiveGen.set(p.id, p.generation);
+  }
+  // Iterate until stable. Cap iterations to avoid pathological loops.
+  for (let pass = 0; pass < persons.length + 5; pass++) {
+    let progressed = false;
+    for (const p of persons) {
+      if (effectiveGen.has(p.id)) continue;
+      // Same-generation relatives first (spouses) so couples stay aligned.
+      for (const sid of p.spouseIds) {
+        const g = effectiveGen.get(sid);
+        if (g !== undefined) {
+          effectiveGen.set(p.id, g);
+          progressed = true;
+          break;
+        }
+      }
+      if (effectiveGen.has(p.id)) continue;
+      // Parents → child is one generation down.
+      for (const pid of p.parentIds) {
+        const g = effectiveGen.get(pid);
+        if (g !== undefined) {
+          effectiveGen.set(p.id, g + 1);
+          progressed = true;
+          break;
+        }
+      }
+      if (effectiveGen.has(p.id)) continue;
+      // Children → parent is one generation up.
+      for (const cid of p.childIds) {
+        const g = effectiveGen.get(cid);
+        if (g !== undefined) {
+          effectiveGen.set(p.id, g - 1);
+          progressed = true;
+          break;
+        }
+      }
+    }
+    if (!progressed) break;
+  }
+  // Orphans (no relatives at all) get parked in a row just below the
+  // lowest derived generation so they're still visible on the canvas.
+  let maxDerivedGen = 0;
+  for (const g of effectiveGen.values()) {
+    if (g > maxDerivedGen) maxDerivedGen = g;
+  }
+  const ORPHAN_GEN = maxDerivedGen + 2;
+  for (const p of persons) {
+    if (!effectiveGen.has(p.id)) effectiveGen.set(p.id, ORPHAN_GEN);
+  }
+
+  const genOf = (personId: string) => effectiveGen.get(personId) ?? 0;
   const genY = (gen: number) => gen * ROW_HEIGHT;
 
   // Tracks the right edge (x + CARD_W/2 + H_GAP) of the last placement in a
@@ -86,7 +148,7 @@ function computePlacements(persons: TreePerson[]): {
   }
 
   function place(person: TreePerson, preferredX: number): Placement {
-    const gen = person.generation!;
+    const gen = genOf(person.id);
     const y = genY(gen);
     const minCursor = rowCursor.get(gen);
     let x = minCursor !== undefined ? Math.max(preferredX, minCursor) : preferredX;
@@ -98,10 +160,12 @@ function computePlacements(persons: TreePerson[]): {
   }
 
   // Collect the placed siblings of `person` by walking each parent's other
-  // children. A sibling is anyone who shares at least one parent.
+  // children. A sibling is anyone who shares at least one parent, and only
+  // counts when they've been placed on the same row as this person.
   function placedSiblingsOf(person: TreePerson): Placement[] {
     const seen = new Set<string>();
     const out: Placement[] = [];
+    const myY = genY(genOf(person.id));
     for (const parentId of person.parentIds) {
       const parent = byId.get(parentId);
       if (!parent) continue;
@@ -110,7 +174,7 @@ function computePlacements(persons: TreePerson[]): {
         if (seen.has(sibId)) continue;
         seen.add(sibId);
         const sib = placements.get(sibId);
-        if (sib && sib.y === genY(person.generation!)) out.push(sib);
+        if (sib && sib.y === myY) out.push(sib);
       }
     }
     return out;
@@ -135,7 +199,7 @@ function computePlacements(persons: TreePerson[]): {
       const leftmost = siblings.reduce((a, b) => (a.x < b.x ? a : b));
       const rightmost = siblings.reduce((a, b) => (a.x > b.x ? a : b));
       const leftCandidate = leftmost.x - CARD_W - H_GAP;
-      if (!collides(leftCandidate, person.generation!)) return leftCandidate;
+      if (!collides(leftCandidate, genOf(person.id))) return leftCandidate;
       return rightmost.x + CARD_W + H_GAP;
     }
     // 3) Already-placed parents: center under the average of their x positions.
@@ -167,11 +231,14 @@ function computePlacements(persons: TreePerson[]): {
   }
 
   // Seeds: deterministic traversal order. Process oldest generations first
-  // (smallest `generation` value — the tree's oldest known ancestors), then
-  // break ties by id to keep renders stable across reloads.
-  const seeds = [...linked].sort((a, b) => {
-    const ag = a.generation!;
-    const bg = b.generation!;
+  // (smallest effective generation — the tree's oldest known ancestors),
+  // then break ties by id to keep renders stable across reloads. This
+  // iterates over EVERY person in the dataset, including ones the DB left
+  // without a stored generation — their effective generation was filled
+  // in above by walking relatives.
+  const seeds = [...persons].sort((a, b) => {
+    const ag = genOf(a.id);
+    const bg = genOf(b.id);
     if (ag !== bg) return ag - bg;
     return a.id.localeCompare(b.id);
   });
@@ -215,7 +282,7 @@ function computePlacements(persons: TreePerson[]): {
         if (placements.has(sid)) continue;
         if (!byId.has(sid)) continue;
         const spouse = byId.get(sid)!;
-        if (spouse.generation !== person.generation) continue; // must share a row
+        if (genOf(spouse.id) !== genOf(person.id)) continue; // must share a row
         place(spouse, preferredX(spouse));
         enqueued.add(sid); // don't re-enqueue this spouse later
         enqueueRelatives(spouse);
