@@ -97,6 +97,25 @@ function computePlacements(persons: TreePerson[]): {
     return placement;
   }
 
+  // Collect the placed siblings of `person` by walking each parent's other
+  // children. A sibling is anyone who shares at least one parent.
+  function placedSiblingsOf(person: TreePerson): Placement[] {
+    const seen = new Set<string>();
+    const out: Placement[] = [];
+    for (const parentId of person.parentIds) {
+      const parent = byId.get(parentId);
+      if (!parent) continue;
+      for (const sibId of parent.childIds) {
+        if (sibId === person.id) continue;
+        if (seen.has(sibId)) continue;
+        seen.add(sibId);
+        const sib = placements.get(sibId);
+        if (sib && sib.y === genY(person.generation!)) out.push(sib);
+      }
+    }
+    return out;
+  }
+
   function preferredX(person: TreePerson): number {
     // 1) Already-placed spouse: land right next to them (marriage adjacency).
     const placedSpouses = person.spouseIds
@@ -106,7 +125,20 @@ function computePlacements(persons: TreePerson[]): {
       const rightmost = placedSpouses.reduce((a, b) => (a.x > b.x ? a : b));
       return rightmost.x + CARD_W + SPOUSE_GAP;
     }
-    // 2) Already-placed parents: center under the average of their x positions.
+    // 2) Placed siblings in the same row: slide to the OUTSIDE of the sibling
+    //    cluster so we never wedge between a married sibling and their
+    //    spouse. Prefer landing to the left of the leftmost sibling; only
+    //    fall back to the right of the rightmost if the left side is blocked
+    //    by an already-placed card.
+    const siblings = placedSiblingsOf(person);
+    if (siblings.length > 0) {
+      const leftmost = siblings.reduce((a, b) => (a.x < b.x ? a : b));
+      const rightmost = siblings.reduce((a, b) => (a.x > b.x ? a : b));
+      const leftCandidate = leftmost.x - CARD_W - H_GAP;
+      if (!collides(leftCandidate, person.generation!)) return leftCandidate;
+      return rightmost.x + CARD_W + H_GAP;
+    }
+    // 3) Already-placed parents: center under the average of their x positions.
     const placedParents = person.parentIds
       .map((id) => placements.get(id))
       .filter((p): p is Placement => !!p);
@@ -114,7 +146,7 @@ function computePlacements(persons: TreePerson[]): {
       const avg = placedParents.reduce((s, p) => s + p.x, 0) / placedParents.length;
       return avg;
     }
-    // 3) Already-placed children: center above them (we're the parent being
+    // 4) Already-placed children: center above them (we're the parent being
     //    added after the child's own subtree is already anchored).
     const placedChildren = person.childIds
       .map((id) => placements.get(id))
@@ -123,7 +155,7 @@ function computePlacements(persons: TreePerson[]): {
       const avg = placedChildren.reduce((s, p) => s + p.x, 0) / placedChildren.length;
       return avg;
     }
-    // 4) Brand-new disconnected component: start to the right of everything
+    // 5) Brand-new disconnected component: start to the right of everything
     //    already placed so it gets its own horizontal band.
     let rightmost = 0;
     let anyPlaced = false;
@@ -147,6 +179,23 @@ function computePlacements(persons: TreePerson[]): {
   const queue: TreePerson[] = [];
   const enqueued = new Set<string>();
 
+  // Helper: enqueue a person's relatives (spouses, children, parents) if
+  // they haven't already been placed or queued.
+  function enqueueRelatives(person: TreePerson) {
+    const relatives = [
+      ...person.spouseIds,
+      ...person.childIds,
+      ...person.parentIds,
+    ];
+    for (const rid of relatives) {
+      if (!byId.has(rid)) continue;
+      if (placements.has(rid)) continue;
+      if (enqueued.has(rid)) continue;
+      queue.push(byId.get(rid)!);
+      enqueued.add(rid);
+    }
+  }
+
   for (const seed of seeds) {
     if (placements.has(seed.id)) continue;
     queue.push(seed);
@@ -155,21 +204,24 @@ function computePlacements(persons: TreePerson[]): {
       const person = queue.shift()!;
       if (placements.has(person.id)) continue;
       place(person, preferredX(person));
-      // Enqueue unvisited relatives. Spouses first so they land adjacent
-      // immediately; children next so lineages descend cleanly; parents last
-      // since in the oldest-first pass they're usually already placed.
-      const relatives = [
-        ...person.spouseIds,
-        ...person.childIds,
-        ...person.parentIds,
-      ];
-      for (const rid of relatives) {
-        if (!byId.has(rid)) continue;
-        if (placements.has(rid)) continue;
-        if (enqueued.has(rid)) continue;
-        queue.push(byId.get(rid)!);
-        enqueued.add(rid);
+
+      // Couples stick together: immediately place any unplaced spouse next
+      // to the person we just placed, before the BFS moves on to anything
+      // else. This prevents a sibling from wedging into the queue ahead of
+      // the spouse and ending up between the two partners at render time —
+      // which is what made the marriage heart disappear behind an in-between
+      // card before this rule existed.
+      for (const sid of person.spouseIds) {
+        if (placements.has(sid)) continue;
+        if (!byId.has(sid)) continue;
+        const spouse = byId.get(sid)!;
+        if (spouse.generation !== person.generation) continue; // must share a row
+        place(spouse, preferredX(spouse));
+        enqueued.add(sid); // don't re-enqueue this spouse later
+        enqueueRelatives(spouse);
       }
+
+      enqueueRelatives(person);
     }
   }
 
