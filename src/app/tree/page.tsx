@@ -173,6 +173,127 @@ function computePlacements(persons: TreePerson[]): {
     }
   }
 
+  // ── Recenter pass ─────────────────────────────────────────────────────
+  // The BFS above places people relative to whichever relative was seen
+  // first, which is order-dependent and leaves children sitting off-center
+  // when they have multiple upstream lineages. Walk the generations from
+  // oldest to youngest and pull each couple (or solo child) toward the
+  // average X of all their placed parents. This is what actually makes a
+  // descendant sit equidistant between, say, their paternal and maternal
+  // grandparents instead of hugging one branch.
+  //
+  // Couples move as a unit so the marriage line stays short. If a shift
+  // would collide with someone else already in the same row, we clamp the
+  // shift to the largest amount that doesn't cause a collision (we don't
+  // push other people around — that would cascade unpredictably).
+  const genGroups = new Map<number, Placement[]>();
+  for (const p of placements.values()) {
+    if (!genGroups.has(p.y)) genGroups.set(p.y, []);
+    genGroups.get(p.y)!.push(p);
+  }
+  const generationYs = [...genGroups.keys()].sort((a, b) => a - b);
+
+  function clampShift(
+    row: Placement[],
+    moving: Set<string>,
+    desiredDelta: number
+  ): number {
+    // Return the largest magnitude of delta in the desired direction that
+    // still keeps every moving card MIN_ROW_STRIDE away from every stationary
+    // card in the same row. Direction is preserved (sign of desiredDelta).
+    if (desiredDelta === 0) return 0;
+    const stationary = row.filter((p) => !moving.has(p.person.id));
+    const movingList = row.filter((p) => moving.has(p.person.id));
+    let allowed = desiredDelta;
+    for (const m of movingList) {
+      const targetX = m.x + desiredDelta;
+      for (const s of stationary) {
+        const currentGap = Math.abs(s.x - m.x);
+        const newGap = Math.abs(s.x - targetX);
+        if (newGap >= MIN_ROW_STRIDE) continue;
+        // The shift would bring us inside the collision zone. Figure out how
+        // far we can actually move while staying MIN_ROW_STRIDE away.
+        if (desiredDelta > 0) {
+          // Moving right. Only constraint is stationary cards to the right.
+          if (s.x <= m.x) continue; // stationary is to the left, safe
+          const maxRight = s.x - MIN_ROW_STRIDE - m.x;
+          if (maxRight < allowed) allowed = Math.max(0, maxRight);
+        } else {
+          // Moving left.
+          if (s.x >= m.x) continue; // stationary is to the right, safe
+          const minLeft = s.x + MIN_ROW_STRIDE - m.x;
+          if (minLeft > allowed) allowed = Math.min(0, minLeft);
+        }
+        // Sanity: if we can't even maintain current separation, bail.
+        if (currentGap < MIN_ROW_STRIDE) return 0;
+      }
+    }
+    return allowed;
+  }
+
+  // Skip the very top row — the oldest generation has no parents to
+  // center under, so its BFS positions are final.
+  for (let i = 1; i < generationYs.length; i++) {
+    const y = generationYs[i];
+    const row = genGroups.get(y)!;
+    const handled = new Set<string>();
+
+    for (const p of row) {
+      if (handled.has(p.person.id)) continue;
+
+      const spousePlacement = p.person.spouseIds
+        .map((sid) => placements.get(sid))
+        .find((sp): sp is Placement => !!sp && sp.y === p.y);
+
+      if (spousePlacement) {
+        // Couple — center the pair under the union of both spouses' parents.
+        handled.add(p.person.id);
+        handled.add(spousePlacement.person.id);
+
+        const left = p.x <= spousePlacement.x ? p : spousePlacement;
+        const right = p.x <= spousePlacement.x ? spousePlacement : p;
+
+        const leftParents = left.person.parentIds
+          .map((id) => placements.get(id))
+          .filter((q): q is Placement => !!q);
+        const rightParents = right.person.parentIds
+          .map((id) => placements.get(id))
+          .filter((q): q is Placement => !!q);
+        const allParents = [...leftParents, ...rightParents];
+        if (allParents.length === 0) continue;
+
+        const parentAvg = allParents.reduce((s, q) => s + q.x, 0) / allParents.length;
+        const currentMid = (left.x + right.x) / 2;
+        const desiredDelta = parentAvg - currentMid;
+        const delta = clampShift(row, new Set([left.person.id, right.person.id]), desiredDelta);
+        if (delta === 0) continue;
+
+        placements.set(left.person.id, { ...left, x: left.x + delta });
+        placements.set(right.person.id, { ...right, x: right.x + delta });
+      } else {
+        // Solo child — center under parents directly.
+        handled.add(p.person.id);
+        const parents = p.person.parentIds
+          .map((id) => placements.get(id))
+          .filter((q): q is Placement => !!q);
+        if (parents.length === 0) continue;
+
+        const parentAvg = parents.reduce((s, q) => s + q.x, 0) / parents.length;
+        const desiredDelta = parentAvg - p.x;
+        const delta = clampShift(row, new Set([p.person.id]), desiredDelta);
+        if (delta === 0) continue;
+
+        placements.set(p.person.id, { ...p, x: p.x + delta });
+      }
+    }
+
+    // The row list stores references, but we mutated the placements map.
+    // Re-read positions for this row so the next child-couple's collision
+    // check uses up-to-date x values.
+    const refreshed = row.map((p) => placements.get(p.person.id)!);
+    genGroups.set(y, refreshed);
+  }
+
   // Deduplicate spouse pairs so each marriage line is drawn once.
   const drawnSpousePairs: Array<[string, string]> = [];
   const seenPair = new Set<string>();
