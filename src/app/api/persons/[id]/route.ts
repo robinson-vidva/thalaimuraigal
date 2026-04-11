@@ -98,8 +98,27 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const { id } = params;
-  await prisma.person.delete({ where: { id } });
-  await recalculateGenerations();
-  return NextResponse.json({ success: true });
+  try {
+    const { id } = params;
+
+    // If this person is the generation reference, clear the setting BEFORE
+    // deleting — otherwise recalculateGenerations() would BFS from a ghost ID
+    // and silently null out every other person's generation.
+    const refSetting = await prisma.setting.findUnique({
+      where: { key: "reference_person_id" },
+    });
+    if (refSetting?.value === id) {
+      await prisma.setting.delete({ where: { key: "reference_person_id" } });
+    }
+
+    await prisma.person.delete({ where: { id } });
+    await recalculateGenerations();
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("DELETE /api/persons/[id] error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to delete person" },
+      { status: 500 }
+    );
+  }
 }

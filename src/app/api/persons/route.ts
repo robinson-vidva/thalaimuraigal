@@ -47,30 +47,45 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const { fatherId, motherId, spouseId, ...personData } = body;
+  try {
+    const body = await request.json();
+    const { fatherId, motherId, spouseId, ...personData } = body;
 
-  const person = await prisma.person.create({ data: personData });
+    if (!personData.firstName || typeof personData.firstName !== "string" || !personData.firstName.trim()) {
+      return NextResponse.json(
+        { error: "First name is required" },
+        { status: 400 }
+      );
+    }
 
-  if (fatherId) {
-    await prisma.parentChild.create({
-      data: { parentId: fatherId, childId: person.id, parentType: "father" },
-    });
-  }
-  if (motherId) {
-    await prisma.parentChild.create({
-      data: { parentId: motherId, childId: person.id, parentType: "mother" },
-    });
-  }
-  if (spouseId) {
-    await prisma.spouse.create({
-      data: { person1Id: person.id, person2Id: spouseId },
-    });
-  }
+    const person = await prisma.person.create({ data: personData });
 
-  if (fatherId || motherId || spouseId) {
-    await recalculateGenerations();
-  }
+    if (fatherId) {
+      await prisma.parentChild.create({
+        data: { parentId: fatherId, childId: person.id, parentType: "father" },
+      });
+    }
+    if (motherId) {
+      await prisma.parentChild.create({
+        data: { parentId: motherId, childId: person.id, parentType: "mother" },
+      });
+    }
+    if (spouseId) {
+      await prisma.spouse.create({
+        data: { person1Id: person.id, person2Id: spouseId },
+      });
+    }
 
-  return NextResponse.json(person, { status: 201 });
+    if (fatherId || motherId || spouseId) {
+      await recalculateGenerations();
+    }
+
+    return NextResponse.json(person, { status: 201 });
+  } catch (error) {
+    console.error("POST /api/persons error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to create person" },
+      { status: 500 }
+    );
+  }
 }

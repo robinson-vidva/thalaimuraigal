@@ -23,14 +23,28 @@ const EVENT_CONFIG = {
   remembrance: { icon: "\uD83D\uDD4A\uFE0F", color: "bg-slate-100 text-slate-700 border-slate-300", dot: "bg-slate-400", label: "In Loving Memory" },
 };
 
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+function makeAnniversary(year: number, month: number, day: number): Date {
+  // Feb 29 fallback: in non-leap years, observe on Feb 28 so the event
+  // doesn't silently roll to March 1 via Date constructor overflow.
+  if (month === 2 && day === 29 && !isLeapYear(year)) {
+    return new Date(year, 1, 28);
+  }
+  return new Date(year, month - 1, day);
+}
+
 function daysUntil(month: number, day: number): number {
   const now = new Date();
   const thisYear = now.getFullYear();
-  let next = new Date(thisYear, month - 1, day);
-  if (next < new Date(thisYear, now.getMonth(), now.getDate())) {
-    next = new Date(thisYear + 1, month - 1, day);
+  const todayStart = new Date(thisYear, now.getMonth(), now.getDate());
+  let next = makeAnniversary(thisYear, month, day);
+  if (next < todayStart) {
+    next = makeAnniversary(thisYear + 1, month, day);
   }
-  return Math.ceil((next.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  return Math.ceil((next.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 function yearsAgo(year: number | undefined): string {
@@ -88,7 +102,12 @@ export default function CalendarPage() {
     setSelectedDay(null);
   };
 
-  const eventsOnDay = (day: number) => monthEvents.filter((e) => e.day === day);
+  const viewingNonLeapFeb = currentMonth === 1 && !isLeapYear(currentYear);
+  const eventsOnDay = (day: number) => monthEvents.filter((e) => {
+    // Fold Feb 29 events onto Feb 28 when viewing a non-leap February.
+    if (viewingNonLeapFeb && e.month === 2 && e.day === 29) return day === 28;
+    return e.day === day;
+  });
   const selectedDayEvents = selectedDay ? eventsOnDay(selectedDay) : [];
 
   if (loading) {

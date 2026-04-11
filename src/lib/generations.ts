@@ -7,6 +7,19 @@ export async function recalculateGenerations(): Promise<void> {
 
   let referencePersonId = refSetting?.value;
 
+  // Verify the reference person still exists. If they were deleted, the
+  // setting points at a ghost — BFS would visit only that id and every
+  // other person's generation would be silently nulled out.
+  if (referencePersonId) {
+    const exists = await prisma.person.findUnique({
+      where: { id: referencePersonId },
+      select: { id: true },
+    });
+    if (!exists) {
+      referencePersonId = undefined;
+    }
+  }
+
   if (!referencePersonId) {
     const first = await prisma.person.findFirst({
       orderBy: { createdAt: "asc" },
