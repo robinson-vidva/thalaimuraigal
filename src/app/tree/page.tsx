@@ -494,7 +494,17 @@ function parentChildPath(px: number, py: number, cx: number, cy: number): string
 }
 
 // ── Card component ──
-function TreeCard({ person, x, y }: { person: TreePerson; x: number; y: number }) {
+function TreeCard({
+  person,
+  x,
+  y,
+  onContextMenu,
+}: {
+  person: TreePerson;
+  x: number;
+  y: number;
+  onContextMenu?: (personId: string, e: React.MouseEvent) => void;
+}) {
   const gender = person.gender;
   const accent = gender === "M" ? "#92400e" : gender === "F" ? "#b45309" : "#6b7280";
   const bg = gender === "M" ? "#fffbeb" : gender === "F" ? "#fff7ed" : "#f9fafb";
@@ -508,7 +518,18 @@ function TreeCard({ person, x, y }: { person: TreePerson; x: number; y: number }
   const displayName = name.length > 20 ? name.slice(0, 18) + "..." : name;
 
   return (
-    <g transform={`translate(${x - CARD_W / 2}, ${y})`}>
+    <g
+      transform={`translate(${x - CARD_W / 2}, ${y})`}
+      onContextMenu={(e) => {
+        if (!onContextMenu) return;
+        // Swallow the native browser context menu so our in-app menu can
+        // take over, and stop propagation so the container's drag handler
+        // doesn't think the right-click was the start of a pan.
+        e.preventDefault();
+        e.stopPropagation();
+        onContextMenu(person.id, e);
+      }}
+    >
       <rect x={2} y={3} width={CARD_W} height={CARD_H} rx={10} fill="rgba(0,0,0,0.06)" />
       <rect width={CARD_W} height={CARD_H} rx={10} fill={bg} stroke={accent} strokeWidth={1.5} />
       <rect width={4} height={CARD_H} rx={2} fill={accent} />
@@ -557,6 +578,12 @@ function TreeCard({ person, x, y }: { person: TreePerson; x: number; y: number }
 // ────────────────────────────────────────────────────────────────────────────
 // Main page
 // ────────────────────────────────────────────────────────────────────────────
+interface ContextMenuState {
+  screenX: number;
+  screenY: number;
+  personId: string;
+}
+
 export default function TreePage() {
   const [persons, setPersons] = useState<TreePerson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -565,6 +592,20 @@ export default function TreePage() {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  // People the user has chosen to hide via the context menu. Stored as a
+  // Set of person ids; a filtered copy of `persons` with these ids stripped
+  // is what gets handed to computePlacements(), so the layout naturally
+  // drops them and re-packs the remaining cards without any other changes.
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  // Last-known SVG dimensions from the current render. Stored in a ref
+  // because auto-fit lives in a useEffect that runs AFTER render, so the
+  // effect needs to read the dimensions that were just computed.
+  const boundsRef = useRef<{ w: number; h: number } | null>(null);
+  // We only auto-fit once — on initial load. Afterwards the user's own
+  // pan/zoom is sacred and we never clobber it, even if they hide people
+  // and the tree shrinks. They can always click the reset button to re-fit.
+  const didAutoFitRef = useRef(false);
 
   useEffect(() => {
     fetch("/api/tree")
@@ -576,6 +617,50 @@ export default function TreePage() {
       .catch(() => setLoading(false));
   }, []);
 
+  // Auto-fit on initial load. Runs once after the first real render has
+  // written the bounds into boundsRef.
+  useEffect(() => {
+    if (didAutoFitRef.current) return;
+    if (loading) return;
+    if (persons.length === 0) return;
+    const container = containerRef.current;
+    const bounds = boundsRef.current;
+    if (!container || !bounds) return;
+    const cw = container.clientWidth;
+    const ch = container.clientHeight;
+    if (cw === 0 || ch === 0) return;
+    const padding = 40;
+    const fitX = (cw - padding * 2) / bounds.w;
+    const fitY = (ch - padding * 2) / bounds.h;
+    // Clamp: never zoom ABOVE 1 (small trees stay readable, not huge),
+    // never below the global min (0.2).
+    const fit = Math.max(0.2, Math.min(1, Math.min(fitX, fitY)));
+    setZoom(fit);
+    setPan({ x: 0, y: 0 });
+    didAutoFitRef.current = true;
+  }, [loading, persons.length]);
+
+  // Close the context menu on any mousedown outside of it, on scroll, or
+  // when Escape is pressed. Uses a data attribute rather than a ref so the
+  // check works even if the menu was re-rendered between event and handler.
+  useEffect(() => {
+    if (!contextMenu) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest("[data-tree-context-menu]")) return;
+      setContextMenu(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [contextMenu]);
+
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     setZoom((z) => Math.max(0.2, Math.min(3, z - e.deltaY * 0.001)));
@@ -583,12 +668,115 @@ export default function TreePage() {
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      // Only left-click starts a pan. Right-click (button 2) would
+      // otherwise grab the drag state and wedge the cursor into
+      // "grabbing" mode on top of showing our context menu.
+      if (e.button !== 0) return;
       if ((e.target as HTMLElement).closest("a")) return;
       setDragging(true);
       setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     },
     [pan]
   );
+
+  // Walk up (or down) the parent/child graph from a seed person and return
+  // every ancestor (or descendant) id. These drive the Hide-ancestors and
+  // Hide-descendants menu actions. Walks are limited to `persons` so they
+  // can't escape into dangling ids.
+  const ancestorsOf = useCallback(
+    (personId: string): Set<string> => {
+      const byId = new Map(persons.map((p) => [p.id, p]));
+      const out = new Set<string>();
+      const queue = [personId];
+      while (queue.length > 0) {
+        const cur = queue.shift()!;
+        const p = byId.get(cur);
+        if (!p) continue;
+        for (const pid of p.parentIds) {
+          if (out.has(pid)) continue;
+          out.add(pid);
+          queue.push(pid);
+        }
+      }
+      return out;
+    },
+    [persons]
+  );
+
+  const descendantsOf = useCallback(
+    (personId: string): Set<string> => {
+      const byId = new Map(persons.map((p) => [p.id, p]));
+      const out = new Set<string>();
+      const queue = [personId];
+      while (queue.length > 0) {
+        const cur = queue.shift()!;
+        const p = byId.get(cur);
+        if (!p) continue;
+        for (const cid of p.childIds) {
+          if (out.has(cid)) continue;
+          out.add(cid);
+          queue.push(cid);
+        }
+      }
+      return out;
+    },
+    [persons]
+  );
+
+  const handleCardContextMenu = useCallback(
+    (personId: string, e: React.MouseEvent) => {
+      setContextMenu({ screenX: e.clientX, screenY: e.clientY, personId });
+    },
+    []
+  );
+
+  const hideAncestors = useCallback(
+    (personId: string) => {
+      const ids = ancestorsOf(personId);
+      if (ids.size === 0) {
+        setContextMenu(null);
+        return;
+      }
+      setHiddenIds((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) next.add(id);
+        return next;
+      });
+      setContextMenu(null);
+    },
+    [ancestorsOf]
+  );
+
+  const hideDescendants = useCallback(
+    (personId: string) => {
+      const ids = descendantsOf(personId);
+      if (ids.size === 0) {
+        setContextMenu(null);
+        return;
+      }
+      setHiddenIds((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) next.add(id);
+        return next;
+      });
+      setContextMenu(null);
+    },
+    [descendantsOf]
+  );
+
+  const hidePerson = useCallback((personId: string) => {
+    setHiddenIds((prev) => {
+      const next = new Set(prev);
+      next.add(personId);
+      return next;
+    });
+    setContextMenu(null);
+  }, []);
+
+  const showAll = useCallback(() => {
+    setHiddenIds(new Set());
+    setContextMenu(null);
+  }, []);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
@@ -627,8 +815,25 @@ export default function TreePage() {
 
   const zoomIn = () => setZoom((z) => Math.min(3, z + 0.2));
   const zoomOut = () => setZoom((z) => Math.max(0.2, z - 0.2));
+  // Reset = re-fit the current layout to the current container size. This
+  // recomputes the fit based on whatever is VISIBLE (so after hiding a
+  // chunk of the tree, the reset zooms in to the remaining cards), and
+  // also re-centers the pan.
   const resetView = () => {
-    setZoom(1);
+    const container = containerRef.current;
+    const bounds = boundsRef.current;
+    if (!container || !bounds) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+    const cw = container.clientWidth;
+    const ch = container.clientHeight;
+    const padding = 40;
+    const fitX = (cw - padding * 2) / bounds.w;
+    const fitY = (ch - padding * 2) / bounds.h;
+    const fit = Math.max(0.2, Math.min(1, Math.min(fitX, fitY)));
+    setZoom(fit);
     setPan({ x: 0, y: 0 });
   };
 
@@ -640,7 +845,25 @@ export default function TreePage() {
     );
   }
 
-  const { placements, drawnSpousePairs, unlinkedPersons } = computePlacements(persons);
+  // Strip hidden people and rewrite everyone else's parent/child/spouse
+  // id lists so they don't dangle at ids that no longer exist in the
+  // dataset the layout sees. computePlacements already tolerates missing
+  // ids, but keeping the input self-consistent means the sibling and
+  // parent-centering rules don't accidentally try to reach into a hidden
+  // branch.
+  const visiblePersons =
+    hiddenIds.size === 0
+      ? persons
+      : persons
+          .filter((p) => !hiddenIds.has(p.id))
+          .map((p) => ({
+            ...p,
+            parentIds: p.parentIds.filter((id) => !hiddenIds.has(id)),
+            childIds: p.childIds.filter((id) => !hiddenIds.has(id)),
+            spouseIds: p.spouseIds.filter((id) => !hiddenIds.has(id)),
+          }));
+
+  const { placements, drawnSpousePairs, unlinkedPersons } = computePlacements(visiblePersons);
   const allPlacements = Array.from(placements.values());
 
   if (allPlacements.length === 0) {
@@ -674,6 +897,9 @@ export default function TreePage() {
   const svgH = maxY - minY + pad * 2;
   const oX = -minX + pad;
   const oY = -minY + pad;
+  // Stash the current SVG size for the auto-fit effect and the reset
+  // button — both need to read dimensions AFTER the layout has run.
+  boundsRef.current = { w: svgW, h: svgH };
 
   // ── Build parent→child connectors from the data ──
   // A child whose two parents are married to each other only gets ONE line,
@@ -761,32 +987,61 @@ export default function TreePage() {
   }
 
   // Exact counts from the raw API payload vs what actually ended up on the
-  // canvas. These should always match — if they don't, something upstream
-  // is dropping rows and we want to surface it immediately rather than
-  // leave the user wondering where someone went.
+  // canvas. `expectedRenderCount` subtracts whatever the user chose to
+  // hide, so the header reads "Rendering 8 of 19 (11 hidden)" without
+  // tripping the mismatch warning. An actual mismatch (layout dropped a
+  // row that wasn't hidden) still turns the counter red.
   const apiPersonCount = persons.length;
   const renderedPersonCount = allPlacements.length;
-  const countsMatch = apiPersonCount === renderedPersonCount;
+  const hiddenCount = hiddenIds.size;
+  const expectedRenderCount = apiPersonCount - hiddenCount;
+  const countsMatch = renderedPersonCount === expectedRenderCount;
+
+  // Look up the name of the right-clicked person so we can label the
+  // context menu. Falls back to the string id if the person isn't in the
+  // current visible set (shouldn't happen — you can only right-click a
+  // rendered card — but defensive).
+  const contextMenuPerson = contextMenu
+    ? persons.find((p) => p.id === contextMenu.personId)
+    : null;
+  const contextMenuHasParents = contextMenuPerson
+    ? contextMenuPerson.parentIds.length > 0
+    : false;
+  const contextMenuHasChildren = contextMenuPerson
+    ? contextMenuPerson.childIds.length > 0
+    : false;
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between mb-2 gap-1">
         <h1 className="text-2xl font-bold text-amber-900">Family Tree</h1>
         <span
-          className={`text-xs font-medium ${
+          className={`text-xs font-medium flex items-center gap-2 ${
             countsMatch ? "text-gray-500" : "text-red-600"
           }`}
           title="How many people the tree is drawing vs how many are in the database"
         >
-          Rendering {renderedPersonCount} of {apiPersonCount} from{" "}
-          <Link href="/persons" className="underline hover:text-amber-700">
-            /persons
-          </Link>
-          {countsMatch ? "" : " \u2014 mismatch!"}
+          <span>
+            Rendering {renderedPersonCount} of {apiPersonCount}
+            {hiddenCount > 0 ? ` (${hiddenCount} hidden)` : ""} from{" "}
+            <Link href="/persons" className="underline hover:text-amber-700">
+              /persons
+            </Link>
+            {countsMatch ? "" : " \u2014 mismatch!"}
+          </span>
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={showAll}
+              className="text-amber-700 underline hover:text-amber-900"
+            >
+              Show all
+            </button>
+          )}
         </span>
       </div>
       <p className="text-sm text-gray-500 mb-4">
-        Drag to pan, scroll to zoom. Click a card to view profile.
+        Drag to pan, scroll to zoom. Click a card to view profile. Right-click a card to hide ancestors, descendants, or just that person.
       </p>
       {unlinkedPersons.length > 0 && (
         <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
@@ -897,7 +1152,13 @@ export default function TreePage() {
 
             {/* Person cards */}
             {allPlacements.map((p) => (
-              <TreeCard key={p.person.id} person={p.person} x={p.x + oX} y={p.y + oY} />
+              <TreeCard
+                key={p.person.id}
+                person={p.person}
+                x={p.x + oX}
+                y={p.y + oY}
+                onContextMenu={handleCardContextMenu}
+              />
             ))}
           </svg>
         </div>
@@ -938,6 +1199,61 @@ export default function TreePage() {
           {Math.round(zoom * 100)}%
         </div>
       </div>
+
+      {/* Context menu. Rendered as `position: fixed` in viewport coords so
+          it lands where the user right-clicked regardless of page scroll or
+          tree pan/zoom. Dismissed by the mousedown / Escape listeners in
+          the effect above. */}
+      {contextMenu && contextMenuPerson && (
+        <div
+          data-tree-context-menu
+          className="fixed z-50 bg-white border border-gray-200 rounded-md shadow-lg py-1 text-sm min-w-[200px]"
+          style={{
+            top: Math.min(contextMenu.screenY, window.innerHeight - 180),
+            left: Math.min(contextMenu.screenX, window.innerWidth - 220),
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <div className="px-3 py-1.5 text-xs text-gray-400 border-b border-gray-100 truncate">
+            {contextMenuPerson.firstName} {contextMenuPerson.lastName ?? ""}
+          </div>
+          <button
+            type="button"
+            disabled={!contextMenuHasParents}
+            onClick={() => hideAncestors(contextMenu.personId)}
+            className="w-full text-left px-3 py-2 hover:bg-amber-50 text-gray-700 disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+          >
+            Hide ancestors
+          </button>
+          <button
+            type="button"
+            disabled={!contextMenuHasChildren}
+            onClick={() => hideDescendants(contextMenu.personId)}
+            className="w-full text-left px-3 py-2 hover:bg-amber-50 text-gray-700 disabled:text-gray-300 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+          >
+            Hide descendants
+          </button>
+          <button
+            type="button"
+            onClick={() => hidePerson(contextMenu.personId)}
+            className="w-full text-left px-3 py-2 hover:bg-amber-50 text-gray-700"
+          >
+            Hide this person
+          </button>
+          {hiddenIds.size > 0 && (
+            <>
+              <div className="border-t border-gray-100 my-1" />
+              <button
+                type="button"
+                onClick={showAll}
+                className="w-full text-left px-3 py-2 hover:bg-amber-50 text-amber-700 font-medium"
+              >
+                Show all ({hiddenIds.size} hidden)
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
