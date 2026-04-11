@@ -15,6 +15,8 @@ export interface TreePerson {
   gender: string | null;
   dateOfBirth: string | null;
   dateOfDeath: string | null;
+  isLiving: boolean;     // drives the "in memory" styling on the card
+  photoUrl: string | null; // rendered as a circular avatar when present
   generation: number | null;
   parentIds: string[];   // biological parents (father + mother, if known)
   spouseIds: string[];   // current spouses
@@ -54,6 +56,8 @@ export async function GET() {
     gender: p.gender,
     dateOfBirth: p.dateOfBirth,
     dateOfDeath: p.dateOfDeath,
+    isLiving: p.isLiving,
+    photoUrl: p.photoUrl,
     generation: p.generation,
     parentIds: parentsOf.get(p.id) ?? [],
     spouseIds: spousesOf.get(p.id) ?? [],

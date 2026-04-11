@@ -11,10 +11,22 @@ interface TreePerson {
   gender: string | null;
   dateOfBirth: string | null;
   dateOfDeath: string | null;
+  isLiving: boolean;
+  photoUrl: string | null;
   generation: number | null;
   parentIds: string[];
   spouseIds: string[];
   childIds: string[];
+}
+
+// Pull just the four-digit year out of any of the accepted date formats
+// (YYYY-MMM-DD, YYYY-MM-DD, YYYY). MMM-DD (no year) returns "" so we skip
+// the date row on the card entirely rather than show "Apr-08" floating
+// without context.
+function yearOf(date: string | null | undefined): string {
+  if (!date) return "";
+  const m = date.match(/^(\d{4})/);
+  return m ? m[1] : "";
 }
 
 interface Placement {
@@ -500,6 +512,23 @@ function parentChildPath(px: number, py: number, cx: number, cy: number): string
   return `M ${px},${py} C ${px},${midY} ${cx},${midY} ${cx},${cy}`;
 }
 
+// ── Card color palette ──
+// Blue for male, pink for female, neutral gray for unknown gender. The
+// `accent` shade colors strokes, stripes, and the initials/photo frame;
+// `accentDark` is used for the person's name (higher contrast); `bg` is
+// the card fill.
+const PALETTES = {
+  M:       { accent: "#2563eb", accentDark: "#1e3a8a", bg: "#eff6ff" },
+  F:       { accent: "#db2777", accentDark: "#831843", bg: "#fdf2f8" },
+  unknown: { accent: "#6b7280", accentDark: "#374151", bg: "#f9fafb" },
+} as const;
+
+function paletteFor(gender: string | null) {
+  if (gender === "M") return PALETTES.M;
+  if (gender === "F") return PALETTES.F;
+  return PALETTES.unknown;
+}
+
 // ── Card component ──
 function TreeCard({
   person,
@@ -512,9 +541,12 @@ function TreeCard({
   y: number;
   onContextMenu?: (personId: string, e: React.MouseEvent) => void;
 }) {
-  const gender = person.gender;
-  const accent = gender === "M" ? "#92400e" : gender === "F" ? "#b45309" : "#6b7280";
-  const bg = gender === "M" ? "#fffbeb" : gender === "F" ? "#fff7ed" : "#f9fafb";
+  const palette = paletteFor(person.gender);
+  // Deceased = explicit isLiving=false. We intentionally don't fall back to
+  // "has a dateOfDeath" because the seed scripts sometimes leave the death
+  // date unfilled on known-deceased ancestors.
+  const isDeceased = person.isLiving === false;
+
   const name = `${person.firstName} ${person.lastName ?? ""}`.trim();
   const initials = name
     .split(" ")
@@ -523,6 +555,22 @@ function TreeCard({
     .slice(0, 2)
     .toUpperCase();
   const displayName = name.length > 20 ? name.slice(0, 18) + "..." : name;
+
+  // Compact "1920 – 1990 †" style line. The full date string stays on the
+  // profile page; cards only have room for year-only labels.
+  const birthYear = yearOf(person.dateOfBirth);
+  const deathYear = yearOf(person.dateOfDeath);
+  const dateLine = isDeceased
+    ? birthYear && deathYear
+      ? `${birthYear} \u2013 ${deathYear} \u2020`
+      : birthYear
+        ? `${birthYear} \u2013 ? \u2020`
+        : deathYear
+          ? `? \u2013 ${deathYear} \u2020`
+          : "\u2020 in memory"
+    : birthYear || "";
+
+  const avatarClipId = `tree-card-avatar-${person.id}`;
 
   return (
     <g
@@ -537,32 +585,79 @@ function TreeCard({
         onContextMenu(person.id, e);
       }}
     >
-      <rect x={2} y={3} width={CARD_W} height={CARD_H} rx={10} fill="rgba(0,0,0,0.06)" />
-      <rect width={CARD_W} height={CARD_H} rx={10} fill={bg} stroke={accent} strokeWidth={1.5} />
-      <rect width={4} height={CARD_H} rx={2} fill={accent} />
-      <circle cx={26} cy={CARD_H / 2} r={14} fill={accent} />
-      <text
-        x={26}
-        y={CARD_H / 2 + 4}
-        fill="white"
-        fontSize={10}
-        fontWeight="bold"
-        textAnchor="middle"
-      >
-        {initials}
-      </text>
-      <text x={48} y={CARD_H / 2 - 3} fill="#1c1917" fontSize={12} fontWeight="700">
+      {/* Soft drop shadow */}
+      <rect x={2} y={3} width={CARD_W} height={CARD_H} rx={10} fill="rgba(0,0,0,0.09)" />
+
+      {/* Card body. Dashed stroke for deceased people is the primary
+          visual signal; the † in the date line backs it up. */}
+      <rect
+        width={CARD_W}
+        height={CARD_H}
+        rx={10}
+        fill={palette.bg}
+        stroke={palette.accent}
+        strokeWidth={1.5}
+        strokeDasharray={isDeceased ? "5 3" : undefined}
+      />
+
+      {/* Solid accent stripe down the left edge. Stays solid even when the
+          card border is dashed, so the gender color is always readable. */}
+      <rect width={4} height={CARD_H} rx={2} fill={palette.accent} />
+
+      {/* Avatar — photo when we have one, initials bubble otherwise. */}
+      {person.photoUrl ? (
+        <>
+          <defs>
+            <clipPath id={avatarClipId}>
+              <circle cx={26} cy={CARD_H / 2} r={14} />
+            </clipPath>
+          </defs>
+          <image
+            href={person.photoUrl}
+            x={26 - 14}
+            y={CARD_H / 2 - 14}
+            width={28}
+            height={28}
+            preserveAspectRatio="xMidYMid slice"
+            clipPath={`url(#${avatarClipId})`}
+          />
+          <circle
+            cx={26}
+            cy={CARD_H / 2}
+            r={14}
+            fill="none"
+            stroke={palette.accent}
+            strokeWidth={1.5}
+          />
+        </>
+      ) : (
+        <>
+          <circle cx={26} cy={CARD_H / 2} r={14} fill={palette.accent} />
+          <text
+            x={26}
+            y={CARD_H / 2 + 4}
+            fill="white"
+            fontSize={10}
+            fontWeight="bold"
+            textAnchor="middle"
+          >
+            {initials}
+          </text>
+        </>
+      )}
+
+      {/* Name in the accent-dark color for better contrast on the pale bg. */}
+      <text x={48} y={CARD_H / 2 - 3} fill={palette.accentDark} fontSize={12} fontWeight="700">
         {displayName}
       </text>
-      {person.dateOfBirth && (
-        <text x={48} y={CARD_H / 2 + 10} fill="#a1a1aa" fontSize={9}>
-          {person.dateOfBirth}
-          {person.dateOfDeath ? ` - ${person.dateOfDeath}` : ""}
+      {dateLine && (
+        <text x={48} y={CARD_H / 2 + 10} fill="#6b7280" fontSize={9}>
+          {dateLine}
         </text>
       )}
       {person.generation !== null && (
         <>
-          <circle cx={CARD_W - 16} cy={16} r={10} fill={accent} />
+          <circle cx={CARD_W - 16} cy={16} r={10} fill={palette.accent} />
           <text
             x={CARD_W - 16}
             y={20}
