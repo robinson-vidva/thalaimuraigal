@@ -38,9 +38,9 @@ interface Placement {
 // ── Layout constants ──
 const CARD_W = 220;
 const CARD_H = 54;
-const H_GAP = 30;        // min horizontal gap between any two non-related cards in the same row
+const H_GAP = 50;        // min horizontal gap between any two non-related cards in the same row
 const SPOUSE_GAP = 28;   // horizontal gap between married spouses
-const V_GAP = 70;        // vertical gap between generation rows
+const V_GAP = 120;       // vertical gap between generation rows — deliberately generous so the Bezier parent→child curves have room to fan out and stay followable when many lines cross
 const ROW_HEIGHT = CARD_H + V_GAP;
 // Initial zoom for the canvas. 1.0 = one CSS pixel per layout unit, which
 // (now that the SVG is sized to its intrinsic pixel dimensions rather than
@@ -535,11 +535,15 @@ function TreeCard({
   x,
   y,
   onContextMenu,
+  highlighted,
+  dimmed,
 }: {
   person: TreePerson;
   x: number;
   y: number;
   onContextMenu?: (personId: string, e: React.MouseEvent) => void;
+  highlighted?: boolean;
+  dimmed?: boolean;
 }) {
   const palette = paletteFor(person.gender);
   // Deceased = explicit isLiving=false. We intentionally don't fall back to
@@ -575,6 +579,7 @@ function TreeCard({
   return (
     <g
       transform={`translate(${x - CARD_W / 2}, ${y})`}
+      opacity={dimmed ? 0.35 : 1}
       onContextMenu={(e) => {
         if (!onContextMenu) return;
         // Swallow the native browser context menu so our in-app menu can
@@ -588,15 +593,34 @@ function TreeCard({
       {/* Soft drop shadow */}
       <rect x={2} y={3} width={CARD_W} height={CARD_H} rx={10} fill="rgba(0,0,0,0.09)" />
 
+      {/* Highlight halo — only drawn when a hovered edge has this card as
+          one of its endpoints. A slightly larger rounded rect sits behind
+          the card body and picks up the palette accent so both endpoints
+          of a hovered line light up in the same color family as the line. */}
+      {highlighted && (
+        <rect
+          x={-5}
+          y={-5}
+          width={CARD_W + 10}
+          height={CARD_H + 10}
+          rx={14}
+          fill="none"
+          stroke={palette.accent}
+          strokeWidth={3}
+          strokeOpacity={0.55}
+        />
+      )}
+
       {/* Card body. Dashed stroke for deceased people is the primary
-          visual signal; the † in the date line backs it up. */}
+          visual signal; the † in the date line backs it up. Stroke gets
+          a touch thicker when highlighted so the selected pair pops. */}
       <rect
         width={CARD_W}
         height={CARD_H}
         rx={10}
         fill={palette.bg}
         stroke={palette.accent}
-        strokeWidth={1.5}
+        strokeWidth={highlighted ? 2.5 : 1.5}
         strokeDasharray={isDeceased ? "5 3" : undefined}
       />
 
@@ -700,6 +724,15 @@ export default function TreePage() {
   // drops them and re-packs the remaining cards without any other changes.
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  // Which edge is currently under the mouse. `key` identifies the SVG
+  // path; `personIds` are the cards to highlight at the same time so
+  // hovering a parent→child curve also lights up the parents and child.
+  // Other edges dim when this is set, which makes it possible to pick
+  // out one line from a busy intersection. Null when nothing is hovered.
+  const [hoveredEdge, setHoveredEdge] = useState<{
+    key: string;
+    personIds: string[];
+  } | null>(null);
 
   useEffect(() => {
     fetch("/api/tree")
@@ -1010,7 +1043,9 @@ export default function TreePage() {
   }
 
   // ── Bounds ──
-  const pad = 80;
+  // Base padding gives every card breathing room from the SVG edge so
+  // the outer card border never brushes the container's border.
+  const basePad = 100;
   let minX = Infinity,
     maxX = -Infinity,
     minY = Infinity,
@@ -1021,10 +1056,33 @@ export default function TreePage() {
     minY = Math.min(minY, p.y);
     maxY = Math.max(maxY, p.y + CARD_H);
   }
-  const svgW = maxX - minX + pad * 2;
-  const svgH = maxY - minY + pad * 2;
-  const oX = -minX + pad;
-  const oY = -minY + pad;
+
+  // ── Top-generation centering ──────────────────────────────────────
+  // The BFS layout above places everyone relative to whichever ancestor
+  // was processed first, which typically leaves the top row sitting off
+  // to one side of the horizontal midpoint. Asymmetrically expand the
+  // left OR right padding so the centroid of the top generation lines
+  // up with the horizontal center of the SVG — giving the "top in the
+  // middle, everything fans out below" look the user asked for. We
+  // don't move any card, we only pad the SVG, so the existing layout's
+  // sibling-adjacency and couple-stick rules stay intact.
+  const topRow = allPlacements.filter((p) => p.y === minY);
+  const topCentroid =
+    topRow.length > 0
+      ? topRow.reduce((s, p) => s + p.x, 0) / topRow.length
+      : (minX + maxX) / 2;
+  const currentMidX = (minX + maxX) / 2;
+  const delta = topCentroid - currentMidX;
+  // If delta > 0 the top row is to the RIGHT of the bounds' midpoint;
+  // we extend the right side by 2*delta so the new midpoint lands on
+  // the top centroid. delta < 0 mirrors on the left.
+  const padLeft = basePad + (delta < 0 ? -2 * delta : 0);
+  const padRight = basePad + (delta > 0 ? 2 * delta : 0);
+
+  const svgW = maxX - minX + padLeft + padRight;
+  const svgH = maxY - minY + basePad * 2;
+  const oX = -minX + padLeft;
+  const oY = -minY + basePad;
 
   // ── Build parent→child connectors from the data ──
   // A child whose two parents are married to each other only gets ONE line,
@@ -1042,6 +1100,10 @@ export default function TreePage() {
     cx: number;
     cy: number;
     key: string;
+    // IDs of the cards this edge connects, so hovering the edge can
+    // light up both endpoints. For a joint-parent couple curve, both
+    // parents AND the child are all highlighted at once.
+    personIds: string[];
   }
   const parentChildEdges: ParentChildEdge[] = [];
 
@@ -1083,6 +1145,7 @@ export default function TreePage() {
           cx: child.x,
           cy: child.y,
           key: `couple-${[a.person.id, b.person.id].sort().join("-")}->${childId}`,
+          personIds: [a.person.id, b.person.id, childId],
         });
         // Any additional parents (step-parents from a different marriage, etc.)
         // still get their own individual line.
@@ -1094,6 +1157,7 @@ export default function TreePage() {
             cx: child.x,
             cy: child.y,
             key: `${extra.person.id}->${childId}`,
+            personIds: [extra.person.id, childId],
           });
         }
         continue;
@@ -1107,6 +1171,7 @@ export default function TreePage() {
         cx: child.x,
         cy: child.y,
         key: `${p.person.id}->${childId}`,
+        personIds: [p.person.id, childId],
       });
     }
   }
@@ -1166,7 +1231,7 @@ export default function TreePage() {
         </span>
       </div>
       <p className="text-sm text-gray-500 mb-4">
-        Drag to pan, scroll to zoom. Click a card to view profile. Right-click a card to hide ancestors, descendants, or just that person.
+        Drag to pan, scroll to zoom. Click a card to view profile. Right-click a card to hide ancestors, descendants, or just that person. Hover a line to trace the relationship and highlight both ends.
       </p>
       {unlinkedPersons.length > 0 && (
         <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
@@ -1232,19 +1297,43 @@ export default function TreePage() {
               transformOrigin: "center center",
             }}
           >
-            {/* Parent-child curves */}
-            {parentChildEdges.map((e) => (
-              <path
-                key={e.key}
-                d={parentChildPath(e.px + oX, e.py + oY, e.cx + oX, e.cy + oY)}
-                fill="none"
-                stroke="#d97706"
-                strokeWidth={2}
-                strokeOpacity={0.45}
-              />
-            ))}
+            {/* Parent-child curves. Each edge is rendered as TWO paths:
+                a thick transparent "hit area" on top that captures hover
+                with pointer-events, and the visible stroke underneath.
+                When an edge is hovered we brighten it, thicken it, and
+                dim every other edge so the path is easy to trace even in
+                a crowded intersection. */}
+            {parentChildEdges.map((e) => {
+              const isHovered = hoveredEdge?.key === e.key;
+              const someHovered = hoveredEdge !== null;
+              const d = parentChildPath(e.px + oX, e.py + oY, e.cx + oX, e.cy + oY);
+              return (
+                <g key={e.key}>
+                  <path
+                    d={d}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={18}
+                    style={{ cursor: "pointer" }}
+                    onMouseEnter={() => setHoveredEdge({ key: e.key, personIds: e.personIds })}
+                    onMouseLeave={() => setHoveredEdge(null)}
+                  />
+                  <path
+                    d={d}
+                    fill="none"
+                    stroke={isHovered ? "#92400e" : "#d97706"}
+                    strokeWidth={isHovered ? 3.5 : 2}
+                    strokeOpacity={isHovered ? 1 : someHovered ? 0.1 : 0.45}
+                    pointerEvents="none"
+                  />
+                </g>
+              );
+            })}
 
-            {/* Marriage lines (one per unique pair) */}
+            {/* Marriage lines (one per unique pair). Same hover treatment
+                as the parent-child curves — a wide invisible hit area
+                catches the mouse, the visible line + heart highlights on
+                hover and dims when another edge is highlighted. */}
             {drawnSpousePairs.map(([aId, bId]) => {
               const a = placements.get(aId)!;
               const b = placements.get(bId)!;
@@ -1255,31 +1344,52 @@ export default function TreePage() {
               const x2 = right.x - CARD_W / 2 + oX;
               const y = left.y + CARD_H / 2 + oY;
               const midX = (x1 + x2) / 2;
+              const key = `m-${[aId, bId].sort().join("-")}`;
+              const isHovered = hoveredEdge?.key === key;
+              const someHovered = hoveredEdge !== null;
+              const strokeColor = isHovered ? "#9f1239" : "#b45309";
+              const opacity = isHovered ? 1 : someHovered ? 0.12 : 0.6;
               return (
-                <g key={`m-${aId}-${bId}`}>
+                <g key={key}>
                   <line
                     x1={x1}
                     y1={y}
                     x2={x2}
                     y2={y}
-                    stroke="#b45309"
-                    strokeWidth={2}
-                    strokeOpacity={0.6}
+                    stroke="transparent"
+                    strokeWidth={18}
+                    style={{ cursor: "pointer" }}
+                    onMouseEnter={() => setHoveredEdge({ key, personIds: [aId, bId] })}
+                    onMouseLeave={() => setHoveredEdge(null)}
+                  />
+                  <line
+                    x1={x1}
+                    y1={y}
+                    x2={x2}
+                    y2={y}
+                    stroke={strokeColor}
+                    strokeWidth={isHovered ? 3 : 2}
+                    strokeOpacity={opacity}
+                    pointerEvents="none"
                   />
                   <circle
                     cx={midX}
                     cy={y}
                     r={7}
                     fill="#fff7ed"
-                    stroke="#b45309"
+                    stroke={strokeColor}
                     strokeWidth={1.2}
+                    strokeOpacity={opacity}
+                    pointerEvents="none"
                   />
                   <text
                     x={midX}
                     y={y + 3}
-                    fill="#b45309"
+                    fill={strokeColor}
+                    fillOpacity={opacity}
                     fontSize={10}
                     textAnchor="middle"
+                    pointerEvents="none"
                   >
                     &#9829;
                   </text>
@@ -1287,16 +1397,24 @@ export default function TreePage() {
               );
             })}
 
-            {/* Person cards */}
-            {allPlacements.map((p) => (
-              <TreeCard
-                key={p.person.id}
-                person={p.person}
-                x={p.x + oX}
-                y={p.y + oY}
-                onContextMenu={handleCardContextMenu}
-              />
-            ))}
+            {/* Person cards. When an edge is hovered, cards at the endpoints
+                get a bright halo; every other card dims so the picked pair
+                stands out visually. */}
+            {allPlacements.map((p) => {
+              const isEndpoint = hoveredEdge?.personIds.includes(p.person.id) ?? false;
+              const someHovered = hoveredEdge !== null;
+              return (
+                <TreeCard
+                  key={p.person.id}
+                  person={p.person}
+                  x={p.x + oX}
+                  y={p.y + oY}
+                  onContextMenu={handleCardContextMenu}
+                  highlighted={isEndpoint}
+                  dimmed={someHovered && !isEndpoint}
+                />
+              );
+            })}
           </svg>
         </div>
 
