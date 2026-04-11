@@ -710,6 +710,20 @@ interface ContextMenuState {
   personId: string;
 }
 
+// Focus mode restricts the tree to a bloodline slice around a chosen
+// person — `nUp` direct ancestors, `nDown` direct descendants, plus the
+// immediate spouses of everyone in that set. Siblings / aunts / uncles /
+// cousins are NOT included — "bloodline" here means the strict vertical
+// line. If you want siblings, focus on a parent with nDown=1.
+interface FocusState {
+  personId: string;
+  up: number;
+  down: number;
+}
+
+const DEFAULT_FOCUS_UP = 2;
+const DEFAULT_FOCUS_DOWN = 2;
+
 export default function TreePage() {
   const [persons, setPersons] = useState<TreePerson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -724,6 +738,15 @@ export default function TreePage() {
   // drops them and re-packs the remaining cards without any other changes.
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  // Focus mode — when set, only the people in the focus bloodline are
+  // rendered (plus their immediate spouses). Orthogonal to hiddenIds,
+  // so the user can still hide individual people within a focused view.
+  const [focus, setFocus] = useState<FocusState | null>(null);
+  // Form values for the focus sub-panel in the context menu. Persisted
+  // at the page level so they survive between menu openings — set ±1
+  // once and every subsequent right-click defaults to the same range.
+  const [focusUp, setFocusUp] = useState(DEFAULT_FOCUS_UP);
+  const [focusDown, setFocusDown] = useState(DEFAULT_FOCUS_DOWN);
   // Which edge is currently under the mouse. `key` identifies the SVG
   // path; `personIds` are the cards to highlight at the same time so
   // hovering a parent→child curve also lights up the parents and child.
@@ -948,8 +971,90 @@ export default function TreePage() {
     setContextMenu(null);
   }, []);
 
+  // Compute the bloodline slice visible for a focus request. Includes
+  //   - the focus person
+  //   - up to `up` generations of strict ancestors via parentIds BFS
+  //   - up to `down` generations of strict descendants via childIds BFS
+  //   - every direct spouse of anyone in the set above (but NOT the
+  //     spouses' families — "immediate spouse" is the rule, so in-laws
+  //     don't drag their own branches onto the canvas)
+  // Collateral relatives (siblings of ancestors, cousins, etc.) are
+  // NOT included — that's "collateral bloodline" and the user can get
+  // there by focusing on a parent with nDown bumped by one instead.
+  const focusVisibleIds = useCallback(
+    (personId: string, up: number, down: number): Set<string> => {
+      const byId = new Map(persons.map((p) => [p.id, p]));
+      const visible = new Set<string>();
+      if (!byId.has(personId)) return visible;
+      visible.add(personId);
+
+      // Walk up `up` levels.
+      let frontier = new Set<string>([personId]);
+      for (let i = 0; i < up; i++) {
+        const next = new Set<string>();
+        for (const id of frontier) {
+          const p = byId.get(id);
+          if (!p) continue;
+          for (const pid of p.parentIds) {
+            if (visible.has(pid)) continue;
+            visible.add(pid);
+            next.add(pid);
+          }
+        }
+        if (next.size === 0) break;
+        frontier = next;
+      }
+
+      // Walk down `down` levels.
+      frontier = new Set<string>([personId]);
+      for (let i = 0; i < down; i++) {
+        const next = new Set<string>();
+        for (const id of frontier) {
+          const p = byId.get(id);
+          if (!p) continue;
+          for (const cid of p.childIds) {
+            if (visible.has(cid)) continue;
+            visible.add(cid);
+            next.add(cid);
+          }
+        }
+        if (next.size === 0) break;
+        frontier = next;
+      }
+
+      // Add immediate spouses of everyone in the bloodline set, but
+      // stop there — we don't walk into the spouse's own family.
+      const spouseIdsToAdd: string[] = [];
+      for (const id of visible) {
+        const p = byId.get(id);
+        if (!p) continue;
+        for (const sid of p.spouseIds) {
+          if (visible.has(sid)) continue;
+          spouseIdsToAdd.push(sid);
+        }
+      }
+      for (const sid of spouseIdsToAdd) visible.add(sid);
+
+      return visible;
+    },
+    [persons]
+  );
+
+  const applyFocus = useCallback(
+    (personId: string) => {
+      setFocus({ personId, up: focusUp, down: focusDown });
+      setContextMenu(null);
+    },
+    [focusUp, focusDown]
+  );
+
+  // "Show all" now clears BOTH the hide set and the focus filter in one
+  // shot, since both are ways of restricting visibility. The name stays
+  // the same so the existing "Show all" button references keep working;
+  // don't confuse this with `resetView` below, which handles zoom/pan.
   const showAll = useCallback(() => {
     setHiddenIds(new Set());
+    setFocus(null);
     setContextMenu(null);
   }, []);
 
@@ -1006,22 +1111,27 @@ export default function TreePage() {
     );
   }
 
-  // Strip hidden people and rewrite everyone else's parent/child/spouse
-  // id lists so they don't dangle at ids that no longer exist in the
-  // dataset the layout sees. computePlacements already tolerates missing
-  // ids, but keeping the input self-consistent means the sibling and
-  // parent-centering rules don't accidentally try to reach into a hidden
-  // branch.
+  // Strip hidden people and anything outside the active focus bloodline,
+  // and rewrite everyone else's parent/child/spouse id lists so they
+  // don't dangle at ids that no longer exist in the dataset the layout
+  // sees. computePlacements already tolerates missing ids, but keeping
+  // the input self-consistent means the sibling and parent-centering
+  // rules don't accidentally try to reach into a filtered-out branch.
+  const focusVisibleSet = focus
+    ? focusVisibleIds(focus.personId, focus.up, focus.down)
+    : null;
+  const isVisible = (id: string) =>
+    !hiddenIds.has(id) && (focusVisibleSet === null || focusVisibleSet.has(id));
   const visiblePersons =
-    hiddenIds.size === 0
+    hiddenIds.size === 0 && focusVisibleSet === null
       ? persons
       : persons
-          .filter((p) => !hiddenIds.has(p.id))
+          .filter((p) => isVisible(p.id))
           .map((p) => ({
             ...p,
-            parentIds: p.parentIds.filter((id) => !hiddenIds.has(id)),
-            childIds: p.childIds.filter((id) => !hiddenIds.has(id)),
-            spouseIds: p.spouseIds.filter((id) => !hiddenIds.has(id)),
+            parentIds: p.parentIds.filter(isVisible),
+            childIds: p.childIds.filter(isVisible),
+            spouseIds: p.spouseIds.filter(isVisible),
           }));
 
   const { placements, drawnSpousePairs, unlinkedPersons } = computePlacements(visiblePersons);
@@ -1176,16 +1286,22 @@ export default function TreePage() {
     }
   }
 
-  // Exact counts from the raw API payload vs what actually ended up on the
-  // canvas. `expectedRenderCount` subtracts whatever the user chose to
-  // hide, so the header reads "Rendering 8 of 19 (11 hidden)" without
-  // tripping the mismatch warning. An actual mismatch (layout dropped a
-  // row that wasn't hidden) still turns the counter red.
+  // Exact counts from the raw API payload vs what actually ended up on
+  // the canvas. `expectedRenderCount` is the size of the filtered set
+  // (after both hide and focus), so "Rendering 5 of 19" is informative
+  // rather than looking like a bug. A real mismatch — layout dropping a
+  // row that the filters didn't ask to drop — still turns the counter
+  // red and the number flags it.
   const apiPersonCount = persons.length;
   const renderedPersonCount = allPlacements.length;
   const hiddenCount = hiddenIds.size;
-  const expectedRenderCount = apiPersonCount - hiddenCount;
+  const filtered = hiddenCount > 0 || focus !== null;
+  const expectedRenderCount = visiblePersons.length;
   const countsMatch = renderedPersonCount === expectedRenderCount;
+
+  // Label for the person currently being focused on, used by the
+  // header status chip when focus mode is active.
+  const focusPerson = focus ? persons.find((p) => p.id === focus.personId) : null;
 
   // Look up the name of the right-clicked person so we can label the
   // context menu. Falls back to the string id if the person isn't in the
@@ -1206,7 +1322,7 @@ export default function TreePage() {
       <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between mb-2 gap-1">
         <h1 className="text-2xl font-bold text-amber-900">Family Tree</h1>
         <span
-          className={`text-xs font-medium flex items-center gap-2 ${
+          className={`text-xs font-medium flex items-center gap-2 flex-wrap ${
             countsMatch ? "text-gray-500" : "text-red-600"
           }`}
           title="How many people the tree is drawing vs how many are in the database"
@@ -1219,7 +1335,15 @@ export default function TreePage() {
             </Link>
             {countsMatch ? "" : " \u2014 mismatch!"}
           </span>
-          {hiddenCount > 0 && (
+          {focus && focusPerson && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 border border-amber-200">
+              Focused on {focusPerson.firstName} {focusPerson.lastName ?? ""}{" "}
+              <span className="text-amber-600">
+                (↑{focus.up}/↓{focus.down})
+              </span>
+            </span>
+          )}
+          {filtered && (
             <button
               type="button"
               onClick={showAll}
@@ -1231,7 +1355,7 @@ export default function TreePage() {
         </span>
       </div>
       <p className="text-sm text-gray-500 mb-4">
-        Drag to pan, scroll to zoom. Click a card to view profile. Right-click a card to hide ancestors, descendants, or just that person. Hover a line to trace the relationship and highlight both ends.
+        Drag to pan, scroll to zoom. Click a card to view profile. Right-click a card to hide relatives or focus on a bloodline. Hover a line to trace the relationship and highlight both ends.
       </p>
       {unlinkedPersons.length > 0 && (
         <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
@@ -1462,10 +1586,10 @@ export default function TreePage() {
       {contextMenu && contextMenuPerson && (
         <div
           data-tree-context-menu
-          className="fixed z-50 bg-white border border-gray-200 rounded-md shadow-lg py-1 text-sm min-w-[200px]"
+          className="fixed z-50 bg-white border border-gray-200 rounded-md shadow-lg py-1 text-sm min-w-[240px]"
           style={{
-            top: Math.min(contextMenu.screenY, window.innerHeight - 180),
-            left: Math.min(contextMenu.screenX, window.innerWidth - 220),
+            top: Math.min(contextMenu.screenY, window.innerHeight - 340),
+            left: Math.min(contextMenu.screenX, window.innerWidth - 260),
           }}
           onContextMenu={(e) => e.preventDefault()}
         >
@@ -1495,7 +1619,69 @@ export default function TreePage() {
           >
             Hide this person
           </button>
-          {hiddenIds.size > 0 && (
+          {/* Focus sub-panel. Inline form with +/- steppers and an
+              Apply button so the user can dial in exactly how many
+              generations they want to keep in view without leaving the
+              menu. Only the direct bloodline plus immediate spouses is
+              kept; collaterals (aunts, uncles, cousins, siblings) are
+              excluded on purpose — that's the definition of bloodline. */}
+          <div className="border-t border-gray-100 mt-1 pt-2 px-3 pb-2 bg-amber-50/30">
+            <div className="text-xs font-semibold text-gray-600 mb-2">
+              Focus on this bloodline
+            </div>
+            <div className="flex items-center justify-between gap-2 text-xs text-gray-700 mb-1.5">
+              <span>Ancestors up</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setFocusUp((v) => Math.max(0, v - 1))}
+                  className="w-6 h-6 rounded border border-gray-300 hover:bg-white text-gray-600"
+                  aria-label="Decrease ancestors"
+                >
+                  −
+                </button>
+                <span className="w-6 text-center font-mono">{focusUp}</span>
+                <button
+                  type="button"
+                  onClick={() => setFocusUp((v) => Math.min(10, v + 1))}
+                  className="w-6 h-6 rounded border border-gray-300 hover:bg-white text-gray-600"
+                  aria-label="Increase ancestors"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 text-xs text-gray-700 mb-2.5">
+              <span>Descendants down</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setFocusDown((v) => Math.max(0, v - 1))}
+                  className="w-6 h-6 rounded border border-gray-300 hover:bg-white text-gray-600"
+                  aria-label="Decrease descendants"
+                >
+                  −
+                </button>
+                <span className="w-6 text-center font-mono">{focusDown}</span>
+                <button
+                  type="button"
+                  onClick={() => setFocusDown((v) => Math.min(10, v + 1))}
+                  className="w-6 h-6 rounded border border-gray-300 hover:bg-white text-gray-600"
+                  aria-label="Increase descendants"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => applyFocus(contextMenu.personId)}
+              className="w-full px-3 py-1.5 rounded bg-amber-700 text-white text-xs font-medium hover:bg-amber-800"
+            >
+              Apply focus
+            </button>
+          </div>
+          {filtered && (
             <>
               <div className="border-t border-gray-100 my-1" />
               <button
@@ -1503,7 +1689,9 @@ export default function TreePage() {
                 onClick={showAll}
                 className="w-full text-left px-3 py-2 hover:bg-amber-50 text-amber-700 font-medium"
               >
-                Show all ({hiddenIds.size} hidden)
+                Show all
+                {hiddenCount > 0 && ` (${hiddenCount} hidden)`}
+                {focus && " · clear focus"}
               </button>
             </>
           )}
