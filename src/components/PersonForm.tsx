@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { PersonFormData, Gender } from "@/types";
 import LocationSearch from "./LocationSearch";
-import { validatePersonDates } from "@/lib/date-validation";
+import { validatePersonDates, validatePartialDate } from "@/lib/date-validation";
 
 interface PersonOption { id: string; firstName: string; lastName: string | null; gender: string | null; }
 interface PersonFormProps { initialData?: PersonFormData & { id?: string }; isEdit?: boolean; }
@@ -15,7 +15,7 @@ type RelKind = "father" | "mother" | "spouse" | "son" | "daughter";
 // clears one of these we must send an explicit null so the server deletes
 // the row — otherwise the submit cleaner would drop the empty string and
 // the PUT handler would treat it as "leave alone".
-const NULLABLE_REL_FIELDS = new Set(["fatherId", "motherId", "spouseId"]);
+const NULLABLE_REL_FIELDS = new Set(["fatherId", "motherId", "spouseId", "marriageDate"]);
 
 export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
   const router = useRouter();
@@ -26,7 +26,8 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
     firstName: "", lastName: "", nickname: "", gender: undefined,
     dateOfBirth: "", placeOfBirth: "", dateOfDeath: "", placeOfDeath: "",
     isLiving: true, biography: "", occupation: "", familySide: undefined,
-    birthOrder: undefined, fatherId: "", motherId: "", spouseId: "", notes: "",
+    birthOrder: undefined, fatherId: "", motherId: "", spouseId: "",
+    marriageDate: "", notes: "",
     currentCity: "", currentState: "", currentCountry: "",
     birthLatitude: undefined, birthLongitude: undefined,
     currentLatitude: undefined, currentLongitude: undefined,
@@ -37,6 +38,9 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
   const [relPickerOpen, setRelPickerOpen] = useState(false);
   const [relSearch, setRelSearch] = useState("");
   const [relKind, setRelKind] = useState<RelKind>("father");
+  // Captured when the picker type is "spouse" — applied to form.marriageDate
+  // when the spouse is actually confirmed via addRelationship.
+  const [pendingMarriageDate, setPendingMarriageDate] = useState("");
 
   useEffect(() => {
     fetch("/api/persons").then((r) => r.json()).then((data) =>
@@ -64,6 +68,14 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
     });
     if (dateError) {
       setError(dateError);
+      setLoading(false);
+      return;
+    }
+    // Also sanity-check the marriage date independently (it doesn't
+    // participate in the birth/death order check).
+    const marriageError = validatePartialDate(form.marriageDate, "Marriage date");
+    if (marriageError) {
+      setError(marriageError);
       setLoading(false);
       return;
     }
@@ -171,6 +183,7 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
   const openPicker = () => {
     setRelKind(firstAvailableKind());
     setRelSearch("");
+    setPendingMarriageDate("");
     setRelPickerOpen(true);
   };
 
@@ -184,18 +197,33 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
         if (hasMother) return;
         update("motherId", otherId);
         break;
-      case "spouse":
+      case "spouse": {
         if (hasSpouse) return;
-        update("spouseId", otherId);
+        // Validate the marriage date input (if provided) before committing.
+        const mdTrimmed = pendingMarriageDate.trim();
+        if (mdTrimmed) {
+          const err = validatePartialDate(mdTrimmed, "Marriage date");
+          if (err) {
+            setError(err);
+            return;
+          }
+        }
+        updateMultiple({
+          spouseId: otherId,
+          marriageDate: mdTrimmed || "",
+        });
         break;
+      }
       case "son":
       case "daughter":
         if (!canAddChildKind) return;
         if (!childrenIds.includes(otherId)) update("childrenIds", [...childrenIds, otherId]);
         break;
     }
+    setError("");
     setRelPickerOpen(false);
     setRelSearch("");
+    setPendingMarriageDate("");
   };
 
   const removeRelationship = (r: Rel) => {
@@ -207,7 +235,7 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
         update("motherId", "");
         break;
       case "spouse":
-        update("spouseId", "");
+        updateMultiple({ spouseId: "", marriageDate: "" });
         break;
       case "son":
       case "daughter":
@@ -266,7 +294,7 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
-            <input type="text" placeholder="YYYY-MM-DD or YYYY" value={form.dateOfBirth ?? ""} onChange={(e) => update("dateOfBirth", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+            <input type="text" placeholder="YYYY-MM-DD, YYYY, or MMM-DD" value={form.dateOfBirth ?? ""} onChange={(e) => update("dateOfBirth", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
           </div>
           <div>
             <LocationSearch
@@ -294,7 +322,7 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3 pl-6 border-l-2 border-gray-200">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date of Death</label>
-                <input type="text" placeholder="YYYY-MM-DD or YYYY" value={form.dateOfDeath ?? ""} onChange={(e) => update("dateOfDeath", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+                <input type="text" placeholder="YYYY-MM-DD, YYYY, or MMM-DD" value={form.dateOfDeath ?? ""} onChange={(e) => update("dateOfDeath", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Place of Death</label>
@@ -341,6 +369,7 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
               {relationships.map((r) => {
                 const other = persons.find((p) => p.id === r.otherId);
                 const name = other ? `${other.firstName} ${other.lastName ?? ""}`.trim() : "Unknown";
+                const anniversary = r.kind === "spouse" && form.marriageDate ? form.marriageDate : null;
                 return (
                   <span
                     key={`${r.kind}-${r.otherId}`}
@@ -349,6 +378,12 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
                     <span className="font-semibold">{chipLabel(r)}</span>
                     <span>&middot;</span>
                     <span>{name}</span>
+                    {anniversary && (
+                      <>
+                        <span className="text-amber-600">&middot;</span>
+                        <span className="text-amber-700">&#9829; {anniversary}</span>
+                      </>
+                    )}
                     <button
                       type="button"
                       onClick={() => removeRelationship(r)}
@@ -408,6 +443,24 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
                   />
                 </div>
               </div>
+
+              {relKind === "spouse" && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Marriage date <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="YYYY-MM-DD, YYYY, or MMM-DD"
+                    value={pendingMarriageDate}
+                    onChange={(e) => setPendingMarriageDate(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500 bg-white"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Added to the family calendar as an annual anniversary. Use MMM-DD (e.g. Apr-08) when the year is unknown.
+                  </p>
+                </div>
+              )}
 
               {relSearch && (
                 <div className="border border-gray-200 rounded-md divide-y divide-gray-100 max-h-48 overflow-auto bg-white">

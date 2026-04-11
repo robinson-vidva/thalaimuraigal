@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { monthAbbrevToNumber } from "@/lib/date-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -8,18 +9,37 @@ export interface CalendarEvent {
   title: string;
   personName: string;
   personId: string;
-  date: string;       // original full date (YYYY-MM-DD)
+  date: string;       // original date string as stored
   month: number;      // 1-12
   day: number;        // 1-31
-  year?: number;      // original year (for age/years calculation)
+  year?: number;      // original year, if known — omitted for MMM-DD form
 }
 
-function parseDate(dateStr: string): { month: number; day: number; year: number } | null {
+// Accepts three formats:
+//   "YYYY-MM-DD" - full calendar date
+//   "MMM-DD"     - month + day only, no year (recurring event, age unknown)
+//   "YYYY"       - year only, skipped (no month/day to place on a calendar)
+function parseDate(dateStr: string): { month: number; day: number; year?: number } | null {
   if (!dateStr) return null;
-  // Handle YYYY-MM-DD
+  // Full date form
   const full = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (full) return { year: parseInt(full[1]), month: parseInt(full[2]), day: parseInt(full[3]) };
-  // Handle YYYY only — skip (no month/day to place on calendar)
+  if (full) {
+    return {
+      year: parseInt(full[1], 10),
+      month: parseInt(full[2], 10),
+      day: parseInt(full[3], 10),
+    };
+  }
+  // Month + day form
+  const md = dateStr.match(/^([A-Za-z]{3})-(\d{1,2})$/);
+  if (md) {
+    const month = monthAbbrevToNumber(md[1]);
+    if (month === null) return null;
+    const day = parseInt(md[2], 10);
+    if (day < 1 || day > 31) return null;
+    return { month, day };
+  }
+  // Year-only and anything else — no month/day to place.
   return null;
 }
 

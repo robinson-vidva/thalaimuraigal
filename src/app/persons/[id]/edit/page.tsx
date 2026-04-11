@@ -17,11 +17,15 @@ export default function EditPersonPage() {
       .then((person) => {
         const fatherId = person.childOf?.find((c: { parentType: string }) => c.parentType === "father")?.parent?.id ?? "";
         const motherId = person.childOf?.find((c: { parentType: string }) => c.parentType === "mother")?.parent?.id ?? "";
+        // Pull the spouse row (and its marriage date) from whichever side of
+        // the spouses table this person is stored on.
+        const spouseRow = person.spouse1?.[0] ?? person.spouse2?.[0];
         const spouse = person.spouse1?.[0]?.person2 ?? person.spouse2?.[0]?.person1;
         const spouseId = spouse?.id ?? "";
+        const marriageDate = spouseRow?.marriageDate ?? "";
         const childrenIds: string[] =
           person.parentOf?.map((p: { child: { id: string } }) => p.child.id) ?? [];
-        setData({ ...person, id: person.id, fatherId, motherId, spouseId, childrenIds });
+        setData({ ...person, id: person.id, fatherId, motherId, spouseId, marriageDate, childrenIds });
         setLoading(false);
       });
   }, [id]);

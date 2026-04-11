@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { recalculateGenerations } from "@/lib/generations";
-import { validatePersonDates } from "@/lib/date-validation";
+import { validatePersonDates, validatePartialDate } from "@/lib/date-validation";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { fatherId, motherId, spouseId, childrenIds, ...personData } = body;
+    const { fatherId, motherId, spouseId, marriageDate, childrenIds, ...personData } = body;
 
     if (!personData.firstName || typeof personData.firstName !== "string" || !personData.firstName.trim()) {
       return NextResponse.json(
@@ -65,6 +65,13 @@ export async function POST(request: NextRequest) {
     });
     if (dateError) {
       return NextResponse.json({ error: dateError }, { status: 400 });
+    }
+
+    if (marriageDate) {
+      const marriageError = validatePartialDate(marriageDate, "Marriage date");
+      if (marriageError) {
+        return NextResponse.json({ error: marriageError }, { status: 400 });
+      }
     }
 
     const childIdsList: string[] = Array.isArray(childrenIds) ? childrenIds.filter((id: unknown): id is string => typeof id === "string" && id.length > 0) : [];
@@ -111,7 +118,11 @@ export async function POST(request: NextRequest) {
     }
     if (spouseId) {
       await prisma.spouse.create({
-        data: { person1Id: person.id, person2Id: spouseId },
+        data: {
+          person1Id: person.id,
+          person2Id: spouseId,
+          ...(marriageDate ? { marriageDate } : {}),
+        },
       });
     }
 

@@ -1,16 +1,30 @@
 // Shared date validation used by both the person form (client) and the
 // /api/persons routes (server). Dates in this app are stored as strings in
-// one of two accepted formats:
-//   - "YYYY"           (year only, when the exact day is unknown)
-//   - "YYYY-MM-DD"     (full calendar date)
+// one of three accepted formats:
+//   - "YYYY-MM-DD"     full calendar date
+//   - "YYYY"           year only, when the exact day is unknown
+//   - "MMM-DD"         month + day only, when the year is unknown but the
+//                      annual birthday / anniversary / remembrance day is
+//                      known (e.g. "Apr-08"). The calendar still surfaces
+//                      these as recurring events.
 // Anything else is rejected up front so bad data never lands in the DB.
 
 const YEAR_ONLY = /^\d{4}$/;
 const FULL_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const MONTH_DAY = /^([A-Za-z]{3})-(\d{1,2})$/;
 
 // Absolute lower bound for any family-tree year. Rejects typos like "193"
 // or "19850" early.
 const MIN_YEAR = 1;
+
+const MONTH_ABBREVS: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+export function monthAbbrevToNumber(abbrev: string): number | null {
+  return MONTH_ABBREVS[abbrev.toLowerCase()] ?? null;
+}
 
 /**
  * Validate a single "partial date" string (year-only or full YYYY-MM-DD).
@@ -34,6 +48,28 @@ export function validatePartialDate(
     const year = parseInt(trimmed, 10);
     if (year < MIN_YEAR || year > maxYear) {
       return `${fieldLabel}: year ${year} is out of range (expected ${MIN_YEAR}\u2013${maxYear})`;
+    }
+    return null;
+  }
+
+  // Month + day form: "Apr-08". No year, so no future-date check — an
+  // annual recurring birthday is always valid regardless of when it's
+  // entered. Feb 29 is accepted because without a year we can't know
+  // whether it was a leap year at the person's actual birth.
+  const mdMatch = trimmed.match(MONTH_DAY);
+  if (mdMatch) {
+    const monthNum = monthAbbrevToNumber(mdMatch[1]);
+    if (monthNum === null) {
+      return `${fieldLabel}: "${mdMatch[1]}" is not a valid month abbreviation (expected Jan\u2013Dec)`;
+    }
+    const day = parseInt(mdMatch[2], 10);
+    if (day < 1 || day > 31) {
+      return `${fieldLabel}: day ${day} is not valid (must be 1\u201331)`;
+    }
+    // Use 2000 (a leap year) to allow Feb 29 under this format.
+    const d = new Date(2000, monthNum - 1, day);
+    if (d.getMonth() !== monthNum - 1 || d.getDate() !== day) {
+      return `${fieldLabel}: ${trimmed} is not a real calendar date`;
     }
     return null;
   }

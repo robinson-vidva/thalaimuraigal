@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { recalculateGenerations, validateNoCycle } from "@/lib/generations";
-import { validatePersonDates } from "@/lib/date-validation";
+import { validatePersonDates, validatePartialDate } from "@/lib/date-validation";
 
 export async function GET(
   _request: NextRequest,
@@ -46,7 +46,14 @@ export async function PUT(
       "generation", "familySide", "birthOrder", "addedBy", "notes",
     ];
 
-    const { fatherId, motherId, spouseId, childrenIds, ...rest } = body;
+    const { fatherId, motherId, spouseId, marriageDate, childrenIds, ...rest } = body;
+
+    if (marriageDate) {
+      const marriageError = validatePartialDate(marriageDate, "Marriage date");
+      if (marriageError) {
+        return NextResponse.json({ error: marriageError }, { status: 400 });
+      }
+    }
 
     const updateData: Record<string, unknown> = {};
     for (const key of allowedFields) {
@@ -94,13 +101,32 @@ export async function PUT(
       }
     }
 
-    // Update spouse relationship
-    if ("spouseId" in body) {
+    // Update spouse relationship (and any attached marriage date). If only
+    // marriageDate changes (same spouseId as before), the delete+recreate
+    // still does the right thing — it simply stamps a fresh row with the
+    // new date. The marriageDate key may arrive alongside spouseId or on
+    // its own; both paths are handled.
+    if ("spouseId" in body || "marriageDate" in body) {
+      // If spouseId is not in the body but marriageDate is, we need the
+      // existing spouse's id to recreate the row with the new date.
+      let targetSpouseId: string | null | undefined = spouseId;
+      if (!("spouseId" in body)) {
+        const existing = await prisma.spouse.findFirst({
+          where: { OR: [{ person1Id: id }, { person2Id: id }] },
+        });
+        targetSpouseId = existing?.person1Id === id ? existing?.person2Id : existing?.person1Id;
+      }
       await prisma.spouse.deleteMany({
         where: { OR: [{ person1Id: id }, { person2Id: id }] },
       });
-      if (spouseId) {
-        await prisma.spouse.create({ data: { person1Id: id, person2Id: spouseId } });
+      if (targetSpouseId) {
+        await prisma.spouse.create({
+          data: {
+            person1Id: id,
+            person2Id: targetSpouseId,
+            ...(marriageDate ? { marriageDate } : {}),
+          },
+        });
       }
     }
 

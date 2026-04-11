@@ -14,6 +14,19 @@ export default async function PersonProfilePage({ params }: { params: { id: stri
   if (!person) notFound();
 
   const relationships = await getPersonRelationships(id);
+
+  // Pull every spouse row for this person so we can show the marriage date
+  // next to each partner on the profile. Anniversary dates are stored on the
+  // spouse row, not the person, so we query them separately.
+  const spouseRows = await prisma.spouse.findMany({
+    where: { OR: [{ person1Id: id }, { person2Id: id }] },
+  });
+  const marriageDateBySpouseId = new Map<string, string>();
+  for (const row of spouseRows) {
+    if (!row.marriageDate) continue;
+    const otherId = row.person1Id === id ? row.person2Id : row.person1Id;
+    marriageDateBySpouseId.set(otherId, row.marriageDate);
+  }
   const fullName = [person.firstName, person.lastName].filter(Boolean).join(" ");
   const dates = person.isLiving
     ? [person.dateOfBirth, "present"].filter(Boolean).join(" \u2013 ")
@@ -63,7 +76,29 @@ export default async function PersonProfilePage({ params }: { params: { id: stri
               </div>
               <div>
                 <h3 className="text-sm font-semibold text-gray-500 mb-2">Spouse</h3>
-                {relationships.spouses.length > 0 ? relationships.spouses.map((s) => <Link key={s.id} href={`/persons/${s.id}`} className="block text-sm text-amber-700 hover:underline">{s.firstName} {s.lastName ?? ""}</Link>) : <p className="text-sm text-gray-400">None</p>}
+                {relationships.spouses.length > 0 ? (
+                  relationships.spouses.map((s) => {
+                    const anniversary = marriageDateBySpouseId.get(s.id);
+                    return (
+                      <div key={s.id} className="mb-1">
+                        <Link
+                          href={`/persons/${s.id}`}
+                          className="block text-sm text-amber-700 hover:underline"
+                        >
+                          {s.firstName} {s.lastName ?? ""}
+                        </Link>
+                        {anniversary && (
+                          <p className="text-xs text-rose-600 flex items-center gap-1">
+                            <span>&#9829;</span>
+                            <span>Married {anniversary}</span>
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-sm text-gray-400">None</p>
+                )}
               </div>
               <div>
                 <h3 className="text-sm font-semibold text-gray-500 mb-2">Children</h3>

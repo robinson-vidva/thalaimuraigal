@@ -48,5 +48,6 @@ export interface PersonFormData {
   fatherId?: string;
   motherId?: string;
   spouseId?: string;
+  marriageDate?: string;  // wedding anniversary (partial date format)
   childrenIds?: string[];
 }
