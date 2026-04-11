@@ -702,9 +702,31 @@ export default function TreePage() {
     }
   }
 
+  // Exact counts from the raw API payload vs what actually ended up on the
+  // canvas. These should always match — if they don't, something upstream
+  // is dropping rows and we want to surface it immediately rather than
+  // leave the user wondering where someone went.
+  const apiPersonCount = persons.length;
+  const renderedPersonCount = allPlacements.length;
+  const countsMatch = apiPersonCount === renderedPersonCount;
+
   return (
     <div>
-      <h1 className="text-2xl font-bold text-amber-900 mb-2">Family Tree</h1>
+      <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between mb-2 gap-1">
+        <h1 className="text-2xl font-bold text-amber-900">Family Tree</h1>
+        <span
+          className={`text-xs font-medium ${
+            countsMatch ? "text-gray-500" : "text-red-600"
+          }`}
+          title="How many people the tree is drawing vs how many are in the database"
+        >
+          Rendering {renderedPersonCount} of {apiPersonCount} from{" "}
+          <Link href="/persons" className="underline hover:text-amber-700">
+            /persons
+          </Link>
+          {countsMatch ? "" : " \u2014 mismatch!"}
+        </span>
+      </div>
       <p className="text-sm text-gray-500 mb-4">
         Drag to pan, scroll to zoom. Click a card to view profile.
       </p>
