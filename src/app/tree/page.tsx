@@ -203,13 +203,28 @@ function computePlacements(persons: TreePerson[]): {
     //    spouse. Prefer landing to the left of the leftmost sibling; only
     //    fall back to the right of the rightmost if the left side is blocked
     //    by an already-placed card.
+    //
+    //    Important: when the person we're placing will drag an unplaced
+    //    spouse along with them via the couples-stick rule, we need to
+    //    reserve room for TWO cards (the person + their partner), not one.
+    //    Otherwise the partner's couples-stick placement collides with the
+    //    existing sibling's cluster and gets shoved to the far right of the
+    //    row — which is exactly how two sisters with husbands ended up
+    //    interleaved incorrectly.
     const siblings = placedSiblingsOf(person);
     if (siblings.length > 0) {
       const leftmost = siblings.reduce((a, b) => (a.x < b.x ? a : b));
       const rightmost = siblings.reduce((a, b) => (a.x > b.x ? a : b));
-      const leftCandidate = leftmost.x - CARD_W - H_GAP;
+      const bringsSpouse = person.spouseIds.some((sid) => {
+        const spouse = byId.get(sid);
+        if (!spouse) return false;
+        if (placements.has(sid)) return false;
+        return genOf(spouse.id) === genOf(person.id);
+      });
+      const offset = bringsSpouse ? MIN_ROW_STRIDE * 2 : MIN_ROW_STRIDE;
+      const leftCandidate = leftmost.x - offset;
       if (!collides(leftCandidate, genOf(person.id))) return leftCandidate;
-      return rightmost.x + CARD_W + H_GAP;
+      return rightmost.x + offset;
     }
     // 3) Already-placed parents: center under the average of their x positions.
     const placedParents = person.parentIds
