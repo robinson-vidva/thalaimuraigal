@@ -298,7 +298,7 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
               label="Date of Birth"
               value={form.dateOfBirth ?? ""}
               onChange={(v) => update("dateOfBirth", v)}
-              hint="Leave Year blank if only the month and day are known."
+              hint="Pick 'Month & day only' if the year is unknown."
             />
           </div>
           <div>
@@ -457,7 +457,7 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
                   label="Marriage date (optional)"
                   value={pendingMarriageDate}
                   onChange={setPendingMarriageDate}
-                  hint="Added to the family calendar as an annual anniversary. Leave Year blank if it's unknown."
+                  hint="Added to the family calendar as an annual anniversary. Pick 'Month & day only' if the year is unknown."
                 />
               )}
 
