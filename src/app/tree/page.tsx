@@ -156,12 +156,19 @@ function flatten(
 
   for (const kid of lr.children) {
     const kidAbsX = absX + kid.relX;
-    // Parent-child connector: start from the couple midpoint (or single-card
-    // center) at the bottom of the card row, curve down to the child's top.
+    // When the child is a couple, the parent-child line must land on the
+    // specific child (the primary spouse) rather than the couple midpoint.
+    // The parent's descendant is the individual, not the marriage that
+    // individual later formed — the marriage didn't inherit parenthood, the
+    // person did. For single-person children the endpoint is the card center
+    // as usual.
+    const kidConnectX = kid.node.partner
+      ? kidAbsX - (CARD_W + pairGapFor(kid.node)) / 2
+      : kidAbsX;
     connectors.push({
       x1: absX,
       y1: absY + CARD_H,
-      x2: kidAbsX,
+      x2: kidConnectX,
       y2: childY,
     });
 
