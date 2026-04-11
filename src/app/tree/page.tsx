@@ -147,13 +147,34 @@ function computePlacements(persons: TreePerson[]): {
   }
 
   function nextFreeXAtOrRightOf(x: number, gen: number): number {
+    // Walk right until tryX is MIN_ROW_STRIDE away from every card already in
+    // this generation row. When a collision is found, we snap tryX to the
+    // colliding card's right edge (card.x + MIN_ROW_STRIDE) instead of blindly
+    // bumping tryX by MIN_ROW_STRIDE. The old behaviour overshot whenever the
+    // preferredX was itself already inside a collision zone — e.g. a spouse
+    // couples-stick call hands in spouse.x + (CARD_W + SPOUSE_GAP) = spouse.x
+    // + 248, which is 2px inside the spouse's own collision zone (because
+    // MIN_ROW_STRIDE is 250). The old loop would then push the partner to
+    // spouse.x + 498 and cascade from there, sending a married partner across
+    // the whole row when the first snap wasn't enough. Snapping to the exact
+    // right edge of each offending card produces the tight spacing the layout
+    // was designed for and never overshoots past unrelated neighbours.
+    const y = genY(gen);
     let tryX = x;
     let guard = 0;
-    while (collides(tryX, gen)) {
-      tryX += MIN_ROW_STRIDE;
-      if (++guard > 500) break; // defensive cap
+    while (true) {
+      let pushedTo: number | null = null;
+      for (const p of placements.values()) {
+        if (p.y !== y) continue;
+        if (Math.abs(p.x - tryX) < MIN_ROW_STRIDE) {
+          const snapped = p.x + MIN_ROW_STRIDE;
+          if (pushedTo === null || snapped > pushedTo) pushedTo = snapped;
+        }
+      }
+      if (pushedTo === null) return tryX;
+      tryX = pushedTo;
+      if (++guard > 500) return tryX; // defensive cap
     }
-    return tryX;
   }
 
   function place(person: TreePerson, preferredX: number): Placement {
@@ -206,33 +227,30 @@ function computePlacements(persons: TreePerson[]): {
       const rightmost = placedSpouses.reduce((a, b) => (a.x > b.x ? a : b));
       return rightmost.x + CARD_W + SPOUSE_GAP;
     }
-    // 2) Placed siblings in the same row: slide to the OUTSIDE of the sibling
-    //    cluster so we never wedge between a married sibling and their
-    //    spouse. Prefer landing to the left of the leftmost sibling; only
-    //    fall back to the right of the rightmost if the left side is blocked
-    //    by an already-placed card.
-    //
-    //    Important: when the person we're placing will drag an unplaced
-    //    spouse along with them via the couples-stick rule, we need to
-    //    reserve room for TWO cards (the person + their partner), not one.
-    //    Otherwise the partner's couples-stick placement collides with the
-    //    existing sibling's cluster and gets shoved to the far right of the
-    //    row — which is exactly how two sisters with husbands ended up
-    //    interleaved incorrectly.
-    const siblings = placedSiblingsOf(person);
+    // 2) Placed siblings in the same row: only use sibling-adjacent placement
+    //    when the person being placed is SINGLE (or their spouse is already
+    //    placed and was handled above). Married siblings whose partner is
+    //    about to be stuck via couples-stick should be treated as their own
+    //    couple unit — they fall through to the parent-centered rule below
+    //    and let nextFreeXAtOrRightOf find a non-colliding slot. Trying to
+    //    pack two married-sibling couples adjacent to each other was the
+    //    root cause of Sherin+Robinson and Shirley+Geoffrey getting split:
+    //    one sibling's sibling-adjacent placement left no room for the
+    //    other sibling's spouse to stick, and the partner got cascaded off
+    //    to the far right of the row.
+    const bringsSpouse = person.spouseIds.some((sid) => {
+      const spouse = byId.get(sid);
+      if (!spouse) return false;
+      if (placements.has(sid)) return false;
+      return genOf(spouse.id) === genOf(person.id);
+    });
+    const siblings = bringsSpouse ? [] : placedSiblingsOf(person);
     if (siblings.length > 0) {
       const leftmost = siblings.reduce((a, b) => (a.x < b.x ? a : b));
       const rightmost = siblings.reduce((a, b) => (a.x > b.x ? a : b));
-      const bringsSpouse = person.spouseIds.some((sid) => {
-        const spouse = byId.get(sid);
-        if (!spouse) return false;
-        if (placements.has(sid)) return false;
-        return genOf(spouse.id) === genOf(person.id);
-      });
-      const offset = bringsSpouse ? MIN_ROW_STRIDE * 2 : MIN_ROW_STRIDE;
-      const leftCandidate = leftmost.x - offset;
+      const leftCandidate = leftmost.x - MIN_ROW_STRIDE;
       if (!collides(leftCandidate, genOf(person.id))) return leftCandidate;
-      return rightmost.x + offset;
+      return rightmost.x + MIN_ROW_STRIDE;
     }
     // 3) Already-placed parents: center under the average of their x positions.
     const placedParents = person.parentIds
@@ -350,31 +368,41 @@ function computePlacements(persons: TreePerson[]): {
     // Return the largest magnitude of delta in the desired direction that
     // still keeps every moving card MIN_ROW_STRIDE away from every stationary
     // card in the same row. Direction is preserved (sign of desiredDelta).
+    // The rule is simple: a moving card can't cross (or land inside the
+    // collision zone of) any stationary card on its side of travel.
+    //
+    // The previous version only applied the constraint when the FULL desired
+    // shift would have collided — it short-circuited on newGap >= STRIDE.
+    // That skip is wrong: if another constraint later clamps `allowed` to a
+    // smaller value, a moving card whose full-desired target cleanly jumped
+    // over a stationary card can end up LANDING ON that card. Always
+    // compute and record the per-card clamp; the min wins.
     if (desiredDelta === 0) return 0;
-    const stationary = row.filter((p) => !moving.has(p.person.id));
-    const movingList = row.filter((p) => moving.has(p.person.id));
+    // Pull each card's current x from `placements` rather than from `row`,
+    // because an earlier couple in the same recenter pass may already have
+    // shifted — the `row` list holds the original Placement snapshots.
+    const current = (id: string) => placements.get(id)!;
+    const stationaryIds = row.filter((p) => !moving.has(p.person.id)).map((p) => p.person.id);
+    const movingIds = row.filter((p) => moving.has(p.person.id)).map((p) => p.person.id);
     let allowed = desiredDelta;
-    for (const m of movingList) {
-      const targetX = m.x + desiredDelta;
-      for (const s of stationary) {
-        const currentGap = Math.abs(s.x - m.x);
-        const newGap = Math.abs(s.x - targetX);
-        if (newGap >= MIN_ROW_STRIDE) continue;
-        // The shift would bring us inside the collision zone. Figure out how
-        // far we can actually move while staying MIN_ROW_STRIDE away.
+    for (const mid of movingIds) {
+      const m = current(mid);
+      for (const sid of stationaryIds) {
+        const s = current(sid);
+        // If the two cards are already overlapping the collision zone, any
+        // shift only makes it worse (or at best neutral) — bail out.
+        if (Math.abs(s.x - m.x) < MIN_ROW_STRIDE) return 0;
         if (desiredDelta > 0) {
-          // Moving right. Only constraint is stationary cards to the right.
-          if (s.x <= m.x) continue; // stationary is to the left, safe
+          // Moving right — only stationary cards to our right can constrain us.
+          if (s.x <= m.x) continue;
           const maxRight = s.x - MIN_ROW_STRIDE - m.x;
           if (maxRight < allowed) allowed = Math.max(0, maxRight);
         } else {
-          // Moving left.
-          if (s.x >= m.x) continue; // stationary is to the right, safe
+          // Moving left — only stationary cards to our left can constrain us.
+          if (s.x >= m.x) continue;
           const minLeft = s.x + MIN_ROW_STRIDE - m.x;
           if (minLeft > allowed) allowed = Math.min(0, minLeft);
         }
-        // Sanity: if we can't even maintain current separation, bail.
-        if (currentGap < MIN_ROW_STRIDE) return 0;
       }
     }
     return allowed;
