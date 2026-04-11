@@ -5,8 +5,16 @@ import { useRouter } from "next/navigation";
 import type { PersonFormData, Gender } from "@/types";
 import LocationSearch from "./LocationSearch";
 
-interface PersonOption { id: string; firstName: string; lastName: string | null; }
+interface PersonOption { id: string; firstName: string; lastName: string | null; gender: string | null; }
 interface PersonFormProps { initialData?: PersonFormData & { id?: string }; isEdit?: boolean; }
+
+type RelKind = "father" | "mother" | "spouse" | "son" | "daughter";
+
+// Fields that represent a single-valued relationship link. When the user
+// clears one of these we must send an explicit null so the server deletes
+// the row — otherwise the submit cleaner would drop the empty string and
+// the PUT handler would treat it as "leave alone".
+const NULLABLE_REL_FIELDS = new Set(["fatherId", "motherId", "spouseId"]);
 
 export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
   const router = useRouter();
@@ -24,11 +32,21 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
     childrenIds: [],
     ...initialData,
   });
-  const [childSearch, setChildSearch] = useState("");
+  // Relationship picker state
+  const [relPickerOpen, setRelPickerOpen] = useState(false);
+  const [relSearch, setRelSearch] = useState("");
+  const [relKind, setRelKind] = useState<RelKind>("father");
 
   useEffect(() => {
     fetch("/api/persons").then((r) => r.json()).then((data) =>
-      setPersons(data.map((p: PersonOption) => ({ id: p.id, firstName: p.firstName, lastName: p.lastName })))
+      setPersons(
+        data.map((p: PersonOption) => ({
+          id: p.id,
+          firstName: p.firstName,
+          lastName: p.lastName,
+          gender: p.gender ?? null,
+        }))
+      )
     );
   }, []);
 
@@ -36,7 +54,22 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
     e.preventDefault();
     setLoading(true);
     setError("");
-    const cleaned = Object.fromEntries(Object.entries(form).filter(([, v]) => v !== "" && v !== undefined));
+    // Clean the payload:
+    //  - drop undefined (never touched)
+    //  - for single-valued relationship links, convert "" to null so the
+    //    server actually deletes the row when the user removes a chip
+    //  - drop other empty strings (unchanged behavior)
+    const cleaned: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(form)) {
+      if (v === undefined) continue;
+      if (NULLABLE_REL_FIELDS.has(k)) {
+        cleaned[k] = v === "" ? null : v;
+      } else if (v === "") {
+        continue;
+      } else {
+        cleaned[k] = v;
+      }
+    }
     try {
       const url = isEdit ? `/api/persons/${initialData?.id}` : "/api/persons";
       const method = isEdit ? "PUT" : "POST";
@@ -54,35 +87,120 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
   const updateMultiple = (fields: Partial<PersonFormData>) => setForm((prev) => ({ ...prev, ...fields }));
   const availablePersons = persons.filter((p) => !initialData?.id || p.id !== initialData.id);
 
+  // ─── Unified Relationships view ───
+  // Internal state is still split across fatherId/motherId/spouseId/childrenIds
+  // (because the API expects that shape), but the form presents them as one
+  // list of { otherId, kind } pairs so the user just adds/removes links
+  // without caring which "slot" they live in.
+  interface Rel { otherId: string; kind: RelKind }
   const childrenIds = form.childrenIds ?? [];
-  const addChild = (id: string) => {
-    if (!childrenIds.includes(id)) update("childrenIds", [...childrenIds, id]);
-  };
-  const removeChild = (id: string) => update("childrenIds", childrenIds.filter((c) => c !== id));
 
-  // People eligible to be listed as children: not self, not this person's parents
-  // or spouse, and not already selected as a child.
-  const excludedAsChild = new Set<string>([
-    form.fatherId ?? "",
-    form.motherId ?? "",
-    form.spouseId ?? "",
-    ...childrenIds,
-  ].filter(Boolean) as string[]);
-  const childSearchLower = childSearch.trim().toLowerCase();
-  const childCandidates = availablePersons
-    .filter((p) => !excludedAsChild.has(p.id))
+  const relationships: Rel[] = [];
+  if (form.fatherId) relationships.push({ otherId: form.fatherId, kind: "father" });
+  if (form.motherId) relationships.push({ otherId: form.motherId, kind: "mother" });
+  if (form.spouseId) relationships.push({ otherId: form.spouseId, kind: "spouse" });
+  for (const cid of childrenIds) {
+    const child = persons.find((p) => p.id === cid);
+    // Son/daughter is derived from the linked child's gender at render time.
+    // We default to "son" when gender is unknown so the chip still renders.
+    const kind: RelKind = child?.gender === "F" ? "daughter" : "son";
+    relationships.push({ otherId: cid, kind });
+  }
+
+  const hasFather = !!form.fatherId;
+  const hasMother = !!form.motherId;
+  const hasSpouse = !!form.spouseId;
+
+  // Son/Daughter adds need this person's gender to decide the parent_type
+  // column (father vs mother). Offer them only when gender is M or F.
+  const canAddChildKind = form.gender === "M" || form.gender === "F";
+
+  // People already linked to this person in any capacity.
+  const linkedIds = new Set<string>(
+    [form.fatherId, form.motherId, form.spouseId, ...childrenIds].filter(Boolean) as string[]
+  );
+
+  // Candidate list for the picker: not self, not already linked, matches search.
+  const relSearchLower = relSearch.trim().toLowerCase();
+  const relCandidates = availablePersons
+    .filter((p) => !linkedIds.has(p.id))
     .filter((p) => {
-      if (!childSearchLower) return true;
+      if (!relSearchLower) return true;
       const name = `${p.firstName} ${p.lastName ?? ""}`.toLowerCase();
-      return name.includes(childSearchLower);
+      return name.includes(relSearchLower);
     })
     .slice(0, 8);
 
-  const selectedChildren = childrenIds
-    .map((id) => persons.find((p) => p.id === id))
-    .filter((p): p is PersonOption => Boolean(p));
+  // Human-readable chip labels.
+  function chipLabel(r: Rel): string {
+    if (r.kind === "father") return "Father";
+    if (r.kind === "mother") return "Mother";
+    if (r.kind === "son") return "Son";
+    if (r.kind === "daughter") return "Daughter";
+    // Spouse: specialise by other person's gender when known.
+    const other = persons.find((p) => p.id === r.otherId);
+    if (other?.gender === "M") return "Husband";
+    if (other?.gender === "F") return "Wife";
+    return "Spouse";
+  }
 
-  const canPickChildren = form.gender === "M" || form.gender === "F";
+  // Pick the next valid kind the user might want to add, so the dropdown
+  // defaults to something sensible when they re-open the picker.
+  function firstAvailableKind(): RelKind {
+    if (!hasFather) return "father";
+    if (!hasMother) return "mother";
+    if (!hasSpouse) return "spouse";
+    if (canAddChildKind) return "son";
+    return "father"; // all taken, will be disabled in the <select>
+  }
+
+  const openPicker = () => {
+    setRelKind(firstAvailableKind());
+    setRelSearch("");
+    setRelPickerOpen(true);
+  };
+
+  const addRelationship = (otherId: string, kind: RelKind) => {
+    switch (kind) {
+      case "father":
+        if (hasFather) return;
+        update("fatherId", otherId);
+        break;
+      case "mother":
+        if (hasMother) return;
+        update("motherId", otherId);
+        break;
+      case "spouse":
+        if (hasSpouse) return;
+        update("spouseId", otherId);
+        break;
+      case "son":
+      case "daughter":
+        if (!canAddChildKind) return;
+        if (!childrenIds.includes(otherId)) update("childrenIds", [...childrenIds, otherId]);
+        break;
+    }
+    setRelPickerOpen(false);
+    setRelSearch("");
+  };
+
+  const removeRelationship = (r: Rel) => {
+    switch (r.kind) {
+      case "father":
+        update("fatherId", "");
+        break;
+      case "mother":
+        update("motherId", "");
+        break;
+      case "spouse":
+        update("spouseId", "");
+        break;
+      case "son":
+      case "daughter":
+        update("childrenIds", childrenIds.filter((id) => id !== r.otherId));
+        break;
+    }
+  };
 
   return (
     <form onSubmit={handleSubmit} className="max-w-3xl space-y-8">
@@ -196,107 +314,151 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
       {/* ── Section 3: Family Connections ── */}
       <fieldset className="border border-gray-200 rounded-lg p-5">
         <legend className="text-sm font-semibold text-gray-700 px-2">Family Connections</legend>
-        <p className="text-xs text-gray-400 mb-4 -mt-1">Link to parents, spouse, and family side</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Father</label>
-            <select value={form.fatherId ?? ""} onChange={(e) => update("fatherId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500">
-              <option value="">None</option>
-              {availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mother</label>
-            <select value={form.motherId ?? ""} onChange={(e) => update("motherId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500">
-              <option value="">None</option>
-              {availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Spouse</label>
-            <select value={form.spouseId ?? ""} onChange={(e) => update("spouseId", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500">
-              <option value="">None</option>
-              {availablePersons.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.lastName ?? ""}</option>)}
-            </select>
-          </div>
+        <p className="text-xs text-gray-400 mb-4 -mt-1">
+          Add relationships one at a time. Each link automatically shows up on the other person&rsquo;s profile too &mdash; you only need to record it once.
+        </p>
+
+        {/* Unified relationships list */}
+        <div className="space-y-2">
+          {relationships.length === 0 ? (
+            <p className="text-xs text-gray-400 italic">No relationships linked yet.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {relationships.map((r) => {
+                const other = persons.find((p) => p.id === r.otherId);
+                const name = other ? `${other.firstName} ${other.lastName ?? ""}`.trim() : "Unknown";
+                return (
+                  <span
+                    key={`${r.kind}-${r.otherId}`}
+                    className="inline-flex items-center gap-2 rounded-full bg-amber-100 text-amber-900 text-xs px-3 py-1.5"
+                  >
+                    <span className="font-semibold">{chipLabel(r)}</span>
+                    <span>&middot;</span>
+                    <span>{name}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeRelationship(r)}
+                      className="ml-1 text-amber-600 hover:text-amber-900 text-base leading-none"
+                      aria-label={`Remove ${chipLabel(r)} link to ${name}`}
+                    >
+                      &times;
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Add relationship button / inline picker */}
+        <div className="mt-4">
+          {!relPickerOpen ? (
+            <button
+              type="button"
+              onClick={openPicker}
+              className="inline-flex items-center gap-1 text-sm text-amber-700 hover:text-amber-900 font-medium"
+            >
+              <span className="text-lg leading-none">+</span> Add relationship
+            </button>
+          ) : (
+            <div className="border border-amber-200 rounded-lg p-3 bg-amber-50/50 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Relationship type</label>
+                  <select
+                    value={relKind}
+                    onChange={(e) => setRelKind(e.target.value as RelKind)}
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500 bg-white"
+                  >
+                    <option value="father" disabled={hasFather}>Father{hasFather ? " (already set)" : ""}</option>
+                    <option value="mother" disabled={hasMother}>Mother{hasMother ? " (already set)" : ""}</option>
+                    <option value="spouse" disabled={hasSpouse}>Spouse{hasSpouse ? " (already set)" : ""}</option>
+                    <option value="son" disabled={!canAddChildKind}>Son</option>
+                    <option value="daughter" disabled={!canAddChildKind}>Daughter</option>
+                  </select>
+                  {(relKind === "son" || relKind === "daughter") && !canAddChildKind && (
+                    <p className="text-[11px] text-amber-700 mt-1">
+                      Set this person&rsquo;s <span className="font-semibold">Gender</span> to Male or Female to link children.
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Person</label>
+                  <input
+                    type="text"
+                    placeholder="Search by name..."
+                    value={relSearch}
+                    onChange={(e) => setRelSearch(e.target.value)}
+                    autoFocus
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500 bg-white"
+                  />
+                </div>
+              </div>
+
+              {relSearch && (
+                <div className="border border-gray-200 rounded-md divide-y divide-gray-100 max-h-48 overflow-auto bg-white">
+                  {relCandidates.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-gray-400">No matching family members.</div>
+                  ) : (
+                    relCandidates.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => addRelationship(p.id, relKind)}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 disabled:opacity-50"
+                        disabled={
+                          (relKind === "father" && hasFather) ||
+                          (relKind === "mother" && hasMother) ||
+                          (relKind === "spouse" && hasSpouse) ||
+                          ((relKind === "son" || relKind === "daughter") && !canAddChildKind)
+                        }
+                      >
+                        {p.firstName} {p.lastName ?? ""}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => { setRelPickerOpen(false); setRelSearch(""); }}
+                  className="text-xs text-gray-500 hover:text-gray-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Birth Order + Family Side (non-people fields stay) */}
+        <div className="mt-5 pt-4 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Birth Order</label>
-            <input type="number" min="1" value={form.birthOrder ?? ""} onChange={(e) => update("birthOrder", e.target.value ? parseInt(e.target.value) : undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" placeholder="e.g. 1 for eldest" />
+            <input
+              type="number"
+              min="1"
+              value={form.birthOrder ?? ""}
+              onChange={(e) => update("birthOrder", e.target.value ? parseInt(e.target.value) : undefined)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+              placeholder="e.g. 1 for eldest"
+            />
           </div>
-        </div>
-        <div className="mt-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Family Side</label>
-          <select value={form.familySide ?? ""} onChange={(e) => update("familySide", e.target.value || undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500">
-            <option value="">Select...</option>
-            <option value="paternal">Paternal</option>
-            <option value="maternal">Maternal</option>
-            <option value="both">Both</option>
-          </select>
-        </div>
-
-        {/* Children multi-select */}
-        <div className="mt-5 pt-4 border-t border-gray-100">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Children</label>
-          <p className="text-xs text-gray-400 mb-2">
-            Link to family members who are the children of this person. Useful when the child was added first.
-          </p>
-
-          {!canPickChildren && (
-            <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-md p-2 mb-2">
-              Set <span className="font-semibold">Gender</span> above before linking children &mdash; we need it to record
-              each link as father or mother.
-            </div>
-          )}
-
-          {/* Selected children chips */}
-          {selectedChildren.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-2">
-              {selectedChildren.map((c) => (
-                <span
-                  key={c.id}
-                  className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 text-xs px-2 py-1"
-                >
-                  {c.firstName} {c.lastName ?? ""}
-                  <button
-                    type="button"
-                    onClick={() => removeChild(c.id)}
-                    className="ml-1 text-amber-600 hover:text-amber-900"
-                    aria-label={`Remove ${c.firstName}`}
-                  >
-                    &times;
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Search + picker list */}
-          <input
-            type="text"
-            placeholder="Search by name..."
-            value={childSearch}
-            onChange={(e) => setChildSearch(e.target.value)}
-            disabled={!canPickChildren}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
-          />
-          {canPickChildren && childSearch && (
-            <div className="mt-1 border border-gray-200 rounded-md divide-y divide-gray-100 max-h-48 overflow-auto bg-white">
-              {childCandidates.length === 0 ? (
-                <div className="px-3 py-2 text-xs text-gray-400">No matching family members.</div>
-              ) : (
-                childCandidates.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => { addChild(p.id); setChildSearch(""); }}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50"
-                  >
-                    {p.firstName} {p.lastName ?? ""}
-                  </button>
-                ))
-              )}
-            </div>
-          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Family Side</label>
+            <select
+              value={form.familySide ?? ""}
+              onChange={(e) => update("familySide", e.target.value || undefined)}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+            >
+              <option value="">Select...</option>
+              <option value="paternal">Paternal</option>
+              <option value="maternal">Maternal</option>
+              <option value="both">Both</option>
+            </select>
+          </div>
         </div>
       </fieldset>
 
