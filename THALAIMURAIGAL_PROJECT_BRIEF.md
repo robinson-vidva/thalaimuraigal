@@ -71,7 +71,7 @@ first_name          TEXT NOT NULL
 last_name           TEXT
 maiden_name         TEXT (original surname before marriage)
 nickname            TEXT
-gender              TEXT CHECK('M', 'F', 'O')
+gender              TEXT CHECK('M', 'F')
 
 date_of_birth       TEXT (ISO format or partial: "1892-04-08" or "1892" or null)
 date_of_birth_approx BOOLEAN DEFAULT 0 (flag if DOB is approximate)

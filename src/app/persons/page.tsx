@@ -80,7 +80,7 @@ export default function PersonsPage() {
       <div className="flex flex-wrap gap-3 mb-6">
         <input type="text" placeholder="Search by name..." value={search} onChange={(e) => setSearch(e.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm w-full sm:w-64" />
         <select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm">
-          <option value="">All Genders</option><option value="M">Male</option><option value="F">Female</option><option value="O">Other</option>
+          <option value="">All Genders</option><option value="M">Male</option><option value="F">Female</option>
         </select>
         <select value={livingFilter} onChange={(e) => setLivingFilter(e.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm">
           <option value="">All</option><option value="true">Living</option><option value="false">Deceased</option>

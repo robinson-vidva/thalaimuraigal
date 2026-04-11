@@ -1,4 +1,4 @@
-export type Gender = "M" | "F" | "O";
+export type Gender = "M" | "F";
 
 export type ParentType = "father" | "mother";
 
