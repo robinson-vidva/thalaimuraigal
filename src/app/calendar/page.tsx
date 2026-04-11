@@ -47,11 +47,26 @@ function daysUntil(month: number, day: number): number {
   return Math.ceil((next.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function yearsAgo(year: number | undefined): string {
-  if (!year) return "";
-  const diff = new Date().getFullYear() - year;
-  if (diff <= 0) return "";
-  return `${diff} years`;
+// Count of years between the event's stored year and this year. Returns
+// null when the event has no year stored (e.g. a Month+Day-only birthday
+// we still want to surface on the calendar but can't attach an age to).
+function yearsSince(eventYear: number | undefined): number | null {
+  if (!eventYear) return null;
+  const diff = new Date().getFullYear() - eventYear;
+  return diff > 0 ? diff : null;
+}
+
+// Human-readable count specific to the event type. Birthdays surface the
+// age the person is turning; anniversaries the number of years married;
+// remembrances how long since the person passed. Keeps the info next to
+// each event in both the Upcoming list and the selected-day popover.
+function yearsLabel(event: CalendarEvent): string {
+  const years = yearsSince(event.year);
+  if (years === null) return "";
+  if (event.type === "birthday") return `Turning ${years}`;
+  if (event.type === "anniversary") return `${years} years married`;
+  if (event.type === "remembrance") return `${years} years ago`;
+  return `${years} years`;
 }
 
 export default function CalendarPage() {
@@ -146,7 +161,7 @@ export default function CalendarPage() {
                       ) : (
                         `In ${e.daysAway} days`
                       )}
-                      {e.year ? ` \u00B7 ${yearsAgo(e.year)}` : ""}
+                      {yearsLabel(e) ? ` \u00B7 ${yearsLabel(e)}` : ""}
                     </p>
                   </div>
                 </Link>
@@ -242,7 +257,7 @@ export default function CalendarPage() {
                     >
                       <span>{cfg.icon}</span>
                       <span className="font-medium">{e.title}</span>
-                      {e.year && <span className="text-xs opacity-60 ml-auto">{yearsAgo(e.year)}</span>}
+                      {yearsLabel(e) && <span className="text-xs opacity-60 ml-auto">{yearsLabel(e)}</span>}
                     </Link>
                   );
                 })}
