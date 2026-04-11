@@ -7,6 +7,11 @@ interface Partner {
   name: string;
   attributes?: Record<string, string>;
   _id?: string;
+  // When present, a linear chain of this partner's own ancestors going upward
+  // (closest first). Rendered as a vertical stack of cards above the partner
+  // card, so that spouses with their own known lineage don't end up as
+  // disconnected roots elsewhere in the tree.
+  ancestors?: Partner[];
 }
 
 interface TreeNode {
@@ -39,13 +44,23 @@ interface Marriage {
 // ── Layout constants ──
 const CARD_W = 220;
 const CARD_H = 54;
-const PAIR_GAP = 28;  // horizontal gap between spouses inside a couple
-const H_GAP = 30;     // horizontal gap between sibling subtrees
-const V_GAP = 70;     // vertical gap between generations
+const PAIR_GAP = 28;              // horizontal gap between spouses inside a couple
+const PAIR_GAP_WITH_ANCESTOR = 280; // wider gap when the partner has their own ancestor chain, so their chain doesn't overlap the primary's ancestor above the midpoint
+const H_GAP = 30;                 // horizontal gap between sibling subtrees
+const V_GAP = 70;                 // vertical gap between generations
+
+// When the partner has their own upward ancestor chain we spread the couple
+// further apart so the chain above the partner card doesn't visually collide
+// with whatever parent card is already sitting above the couple midpoint.
+function pairGapFor(node: TreeNode): number {
+  return node.partner?.ancestors && node.partner.ancestors.length > 0
+    ? PAIR_GAP_WITH_ANCESTOR
+    : PAIR_GAP;
+}
 
 // A person + their spouse takes two cards side by side.
 function pairWidth(node: TreeNode): number {
-  return node.partner ? 2 * CARD_W + PAIR_GAP : CARD_W;
+  return node.partner ? 2 * CARD_W + pairGapFor(node) : CARD_W;
 }
 
 // ── Recursive layout engine ──
@@ -95,9 +110,14 @@ function flatten(
   const nodes: FlatNode[] = [];
   const marriages: Marriage[] = [];
 
+  const connectors: Connector[] = [];
+
   if (hasPartner) {
-    // Two cards side-by-side, separated by PAIR_GAP.
-    const offset = (CARD_W + PAIR_GAP) / 2;
+    // Two cards side-by-side, separated by pairGapFor(node). The gap widens
+    // when the partner has their own ancestor chain, to keep that chain from
+    // overlapping with whatever parent card sits above the couple midpoint.
+    const gap = pairGapFor(lr.node);
+    const offset = (CARD_W + gap) / 2;
     const primaryX = absX - offset;
     const partnerX = absX + offset;
     nodes.push({ node: lr.node, x: primaryX, y: absY });
@@ -108,11 +128,30 @@ function flatten(
       x2: partnerX - CARD_W / 2,
       y: absY + CARD_H / 2,
     });
+
+    // Render the partner's own ancestor chain as a vertical stack of cards
+    // going upward from the partner card. Each link is a vertical connector
+    // from the ancestor's bottom-center to the descendant's top-center.
+    const ancestors = lr.node.partner?.ancestors ?? [];
+    if (ancestors.length > 0) {
+      let prevTopY = absY;            // top of the partner card
+      let ancY = absY - V_GAP - CARD_H; // y of the first ancestor above
+      for (const anc of ancestors) {
+        nodes.push({ node: anc, x: partnerX, y: ancY });
+        connectors.push({
+          x1: partnerX,
+          y1: ancY + CARD_H,
+          x2: partnerX,
+          y2: prevTopY,
+        });
+        prevTopY = ancY;
+        ancY -= V_GAP + CARD_H;
+      }
+    }
   } else {
     nodes.push({ node: lr.node, x: absX, y: absY });
   }
 
-  const connectors: Connector[] = [];
   const childY = absY + CARD_H + V_GAP;
 
   for (const kid of lr.children) {

@@ -7,6 +7,11 @@ interface Partner {
   name: string;
   attributes: Record<string, string>;
   _id: string;
+  // Linear chain of the partner's own ancestors going upward (closest first:
+  // parent, grandparent, great-grandparent, ...). Populated when the partner
+  // has their own known lineage so we can render it as an upward chain above
+  // the partner card, instead of leaving those ancestors as stranded roots.
+  ancestors?: Partner[];
 }
 
 interface TreeNode {
@@ -97,6 +102,42 @@ export async function GET() {
     }
     // Mark any remaining spouses as visited too, so they don't re-render as roots.
     for (const sid of spouses) visited.add(sid);
+
+    // If the partner has their own ancestors in the data, collect them as a
+    // linear chain going upward. We mark each ancestor visited so they aren't
+    // produced as stranded separate roots later in the iteration — their
+    // lineage is now represented inline above the partner card.
+    if (partner) {
+      const chain: Partner[] = [];
+      let currentId: string = partner._id;
+      while (true) {
+        const parentIds = childToParents.get(currentId) || [];
+        let nextId: string | undefined;
+        for (const pid of parentIds) {
+          if (visited.has(pid)) continue;
+          nextId = pid;
+          break;
+        }
+        if (!nextId) break;
+        const parentPerson = personMap.get(nextId);
+        if (!parentPerson) break;
+        chain.push({
+          name: `${parentPerson.firstName} ${parentPerson.lastName ?? ""}`.trim(),
+          _id: parentPerson.id,
+          attributes: {
+            ...(parentPerson.gender ? { gender: parentPerson.gender } : {}),
+            ...(parentPerson.dateOfBirth ? { born: parentPerson.dateOfBirth } : {}),
+            ...(parentPerson.dateOfDeath ? { died: parentPerson.dateOfDeath } : {}),
+            ...(parentPerson.generation !== null ? { generation: String(parentPerson.generation) } : {}),
+          },
+        });
+        visited.add(nextId);
+        currentId = nextId;
+      }
+      if (chain.length > 0) {
+        partner.ancestors = chain;
+      }
+    }
 
     // Children: merge the person's children with the partner's children so
     // half-siblings and shared kids all descend from this couple unit.
