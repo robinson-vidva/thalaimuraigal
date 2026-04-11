@@ -49,9 +49,10 @@ const MIN_ROW_STRIDE = CARD_W + H_GAP;
 function computePlacements(persons: TreePerson[]): {
   placements: Map<string, Placement>;
   drawnSpousePairs: Array<[string, string]>;
+  unlinkedPersons: TreePerson[];
 } {
   const placements = new Map<string, Placement>();
-  if (persons.length === 0) return { placements, drawnSpousePairs: [] };
+  if (persons.length === 0) return { placements, drawnSpousePairs: [], unlinkedPersons: [] };
 
   const byId = new Map(persons.map((p) => [p.id, p]));
 
@@ -109,15 +110,23 @@ function computePlacements(persons: TreePerson[]): {
     }
     if (!progressed) break;
   }
-  // Orphans (no relatives at all) get parked in a row just below the
-  // lowest derived generation so they're still visible on the canvas.
+  // Orphans (could not be reached by any relative chain) get parked in a
+  // dedicated row just below the lowest derived generation so they're still
+  // visible on the canvas. We also track them as `unlinkedPersons` so the
+  // page can render an explicit warning listing their names — previously
+  // these people would appear "off-screen" and look missing even though
+  // they were technically placed.
   let maxDerivedGen = 0;
   for (const g of effectiveGen.values()) {
     if (g > maxDerivedGen) maxDerivedGen = g;
   }
   const ORPHAN_GEN = maxDerivedGen + 2;
+  const unlinkedPersons: TreePerson[] = [];
   for (const p of persons) {
-    if (!effectiveGen.has(p.id)) effectiveGen.set(p.id, ORPHAN_GEN);
+    if (!effectiveGen.has(p.id)) {
+      effectiveGen.set(p.id, ORPHAN_GEN);
+      unlinkedPersons.push(p);
+    }
   }
 
   const genOf = (personId: string) => effectiveGen.get(personId) ?? 0;
@@ -219,15 +228,13 @@ function computePlacements(persons: TreePerson[]): {
       const avg = placedChildren.reduce((s, p) => s + p.x, 0) / placedChildren.length;
       return avg;
     }
-    // 5) Brand-new disconnected component: start to the right of everything
-    //    already placed so it gets its own horizontal band.
-    let rightmost = 0;
-    let anyPlaced = false;
-    for (const cursor of rowCursor.values()) {
-      anyPlaced = true;
-      if (cursor > rightmost) rightmost = cursor;
-    }
-    return anyPlaced ? rightmost + CARD_W : 0;
+    // 5) Brand-new disconnected component: use the row's OWN cursor so the
+    //    new person lands in the next free slot in their own row, rather
+    //    than being flung far to the right by the global-max cursor. This
+    //    keeps an unlinked couple visible in a predictable position at the
+    //    left edge of their band instead of off-screen.
+    const gen = genOf(person.id);
+    return rowCursor.get(gen) ?? 0;
   }
 
   // Seeds: deterministic traversal order. Process oldest generations first
@@ -426,7 +433,7 @@ function computePlacements(persons: TreePerson[]): {
     }
   }
 
-  return { placements, drawnSpousePairs };
+  return { placements, drawnSpousePairs, unlinkedPersons };
 }
 
 // ── Bezier path for parent→child connectors ──
@@ -582,7 +589,7 @@ export default function TreePage() {
     );
   }
 
-  const { placements, drawnSpousePairs } = computePlacements(persons);
+  const { placements, drawnSpousePairs, unlinkedPersons } = computePlacements(persons);
   const allPlacements = Array.from(placements.values());
 
   if (allPlacements.length === 0) {
@@ -730,6 +737,28 @@ export default function TreePage() {
       <p className="text-sm text-gray-500 mb-4">
         Drag to pan, scroll to zoom. Click a card to view profile.
       </p>
+      {unlinkedPersons.length > 0 && (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
+          <p className="font-semibold text-amber-900 mb-1">
+            {unlinkedPersons.length} {unlinkedPersons.length === 1 ? "person is" : "people are"} not connected to the main tree
+          </p>
+          <p className="text-xs text-amber-800 mb-2">
+            They appear at the bottom of the canvas in a separate row. Add a parent, spouse, or child relationship on their profile to splice them into the main tree.
+          </p>
+          <ul className="flex flex-wrap gap-2">
+            {unlinkedPersons.map((p) => (
+              <li key={p.id}>
+                <Link
+                  href={`/persons/${p.id}`}
+                  className="inline-block rounded-full bg-amber-100 text-amber-900 text-xs px-3 py-1 hover:bg-amber-200 hover:underline"
+                >
+                  {p.firstName} {p.lastName ?? ""}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="relative">
         <div
           ref={containerRef}
