@@ -159,12 +159,20 @@ function computePlacements(persons: TreePerson[]): {
   function place(person: TreePerson, preferredX: number): Placement {
     const gen = genOf(person.id);
     const y = genY(gen);
-    const minCursor = rowCursor.get(gen);
-    let x = minCursor !== undefined ? Math.max(preferredX, minCursor) : preferredX;
-    x = nextFreeXAtOrRightOf(x, gen);
+    // DO NOT clamp preferredX to the row cursor — doing so would force every
+    // new placement to land right of everything already in the row, which
+    // silently breaks the sibling-leftward rule (Sherin cannot land to the
+    // left of Shirley if we pin her to the row's rightmost cursor). The
+    // collision loop below handles actual overlap on its own; the row cursor
+    // is ONLY used by "new component" (rule 5) to place unrelated clusters
+    // to the right of existing content.
+    const x = nextFreeXAtOrRightOf(preferredX, gen);
     const placement: Placement = { person, x, y };
     placements.set(person.id, placement);
-    rowCursor.set(gen, x + MIN_ROW_STRIDE);
+    // Track the rightmost cursor for rule 5. A leftward placement must not
+    // shrink the cursor, so we take the max of whatever was there before.
+    const prev = rowCursor.get(gen) ?? Number.NEGATIVE_INFINITY;
+    rowCursor.set(gen, Math.max(prev, x + MIN_ROW_STRIDE));
     return placement;
   }
 
