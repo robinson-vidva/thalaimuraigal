@@ -1025,7 +1025,7 @@ export default function TreePage() {
       <div className="relative">
         <div
           ref={containerRef}
-          className="rounded-xl shadow-lg border border-amber-200 overflow-hidden select-none"
+          className="rounded-xl shadow-lg border border-amber-200 overflow-hidden select-none flex items-center justify-center"
           style={{
             width: "100%",
             height: "min(75vh, calc(100dvh - 180px))",
@@ -1043,11 +1043,23 @@ export default function TreePage() {
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
+          {/* The SVG is sized to its INTRINSIC pixel dimensions (svgW/svgH)
+              rather than width="100%" + viewBox scaling. Earlier we let the
+              viewBox fit into a 100%-sized SVG, which meant the "1x" base
+              was already a function of svgW — so adding more people grew
+              svgW, shrank the base fit, and made cards visibly smaller even
+              though the zoom state hadn't changed. Now the SVG has a true
+              pixel size that doesn't care how many people are on it; the
+              flex parent centers it, `overflow: hidden` clips the excess
+              when the tree is bigger than the viewport, and the CSS
+              transform handles pan + zoom as pure multipliers on the
+              natural size. One card = CARD_W pixels wide at zoom=1, always. */}
           <svg
-            width="100%"
-            height="100%"
+            width={svgW}
+            height={svgH}
             viewBox={`0 0 ${svgW} ${svgH}`}
             style={{
+              flexShrink: 0,
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
               transformOrigin: "center center",
             }}
