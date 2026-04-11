@@ -21,8 +21,10 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
     currentCity: "", currentState: "", currentCountry: "",
     birthLatitude: undefined, birthLongitude: undefined,
     currentLatitude: undefined, currentLongitude: undefined,
+    childrenIds: [],
     ...initialData,
   });
+  const [childSearch, setChildSearch] = useState("");
 
   useEffect(() => {
     fetch("/api/persons").then((r) => r.json()).then((data) =>
@@ -51,6 +53,36 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
   const update = (field: keyof PersonFormData, value: unknown) => setForm((prev) => ({ ...prev, [field]: value }));
   const updateMultiple = (fields: Partial<PersonFormData>) => setForm((prev) => ({ ...prev, ...fields }));
   const availablePersons = persons.filter((p) => !initialData?.id || p.id !== initialData.id);
+
+  const childrenIds = form.childrenIds ?? [];
+  const addChild = (id: string) => {
+    if (!childrenIds.includes(id)) update("childrenIds", [...childrenIds, id]);
+  };
+  const removeChild = (id: string) => update("childrenIds", childrenIds.filter((c) => c !== id));
+
+  // People eligible to be listed as children: not self, not this person's parents
+  // or spouse, and not already selected as a child.
+  const excludedAsChild = new Set<string>([
+    form.fatherId ?? "",
+    form.motherId ?? "",
+    form.spouseId ?? "",
+    ...childrenIds,
+  ].filter(Boolean) as string[]);
+  const childSearchLower = childSearch.trim().toLowerCase();
+  const childCandidates = availablePersons
+    .filter((p) => !excludedAsChild.has(p.id))
+    .filter((p) => {
+      if (!childSearchLower) return true;
+      const name = `${p.firstName} ${p.lastName ?? ""}`.toLowerCase();
+      return name.includes(childSearchLower);
+    })
+    .slice(0, 8);
+
+  const selectedChildren = childrenIds
+    .map((id) => persons.find((p) => p.id === id))
+    .filter((p): p is PersonOption => Boolean(p));
+
+  const canPickChildren = form.gender === "M" || form.gender === "F";
 
   return (
     <form onSubmit={handleSubmit} className="max-w-3xl space-y-8">
@@ -200,6 +232,71 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
             <option value="maternal">Maternal</option>
             <option value="both">Both</option>
           </select>
+        </div>
+
+        {/* Children multi-select */}
+        <div className="mt-5 pt-4 border-t border-gray-100">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Children</label>
+          <p className="text-xs text-gray-400 mb-2">
+            Link to family members who are the children of this person. Useful when the child was added first.
+          </p>
+
+          {!canPickChildren && (
+            <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-md p-2 mb-2">
+              Set <span className="font-semibold">Gender</span> above before linking children &mdash; we need it to record
+              each link as father or mother.
+            </div>
+          )}
+
+          {/* Selected children chips */}
+          {selectedChildren.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {selectedChildren.map((c) => (
+                <span
+                  key={c.id}
+                  className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 text-xs px-2 py-1"
+                >
+                  {c.firstName} {c.lastName ?? ""}
+                  <button
+                    type="button"
+                    onClick={() => removeChild(c.id)}
+                    className="ml-1 text-amber-600 hover:text-amber-900"
+                    aria-label={`Remove ${c.firstName}`}
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Search + picker list */}
+          <input
+            type="text"
+            placeholder="Search by name..."
+            value={childSearch}
+            onChange={(e) => setChildSearch(e.target.value)}
+            disabled={!canPickChildren}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
+          />
+          {canPickChildren && childSearch && (
+            <div className="mt-1 border border-gray-200 rounded-md divide-y divide-gray-100 max-h-48 overflow-auto bg-white">
+              {childCandidates.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-gray-400">No matching family members.</div>
+              ) : (
+                childCandidates.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => { addChild(p.id); setChildSearch(""); }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50"
+                  >
+                    {p.firstName} {p.lastName ?? ""}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
       </fieldset>
 

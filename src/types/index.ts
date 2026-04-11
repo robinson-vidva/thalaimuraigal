@@ -48,4 +48,5 @@ export interface PersonFormData {
   fatherId?: string;
   motherId?: string;
   spouseId?: string;
+  childrenIds?: string[];
 }

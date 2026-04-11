@@ -19,7 +19,9 @@ export default function EditPersonPage() {
         const motherId = person.childOf?.find((c: { parentType: string }) => c.parentType === "mother")?.parent?.id ?? "";
         const spouse = person.spouse1?.[0]?.person2 ?? person.spouse2?.[0]?.person1;
         const spouseId = spouse?.id ?? "";
-        setData({ ...person, id: person.id, fatherId, motherId, spouseId });
+        const childrenIds: string[] =
+          person.parentOf?.map((p: { child: { id: string } }) => p.child.id) ?? [];
+        setData({ ...person, id: person.id, fatherId, motherId, spouseId, childrenIds });
         setLoading(false);
       });
   }, [id]);

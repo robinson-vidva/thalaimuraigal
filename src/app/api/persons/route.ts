@@ -49,13 +49,43 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { fatherId, motherId, spouseId, ...personData } = body;
+    const { fatherId, motherId, spouseId, childrenIds, ...personData } = body;
 
     if (!personData.firstName || typeof personData.firstName !== "string" || !personData.firstName.trim()) {
       return NextResponse.json(
         { error: "First name is required" },
         { status: 400 }
       );
+    }
+
+    const childIdsList: string[] = Array.isArray(childrenIds) ? childrenIds.filter((id: unknown): id is string => typeof id === "string" && id.length > 0) : [];
+
+    // If children are being linked, we need a gender to decide father vs mother.
+    if (childIdsList.length > 0 && personData.gender !== "M" && personData.gender !== "F") {
+      return NextResponse.json(
+        { error: "Set gender to Male or Female before linking children \u2014 it determines whether the link is father or mother." },
+        { status: 400 }
+      );
+    }
+
+    const parentType: "father" | "mother" | null =
+      personData.gender === "M" ? "father" : personData.gender === "F" ? "mother" : null;
+
+    // Reject up front if any selected child already has a biological parent of this type.
+    if (parentType && childIdsList.length > 0) {
+      const conflicts = await prisma.parentChild.findMany({
+        where: { childId: { in: childIdsList }, parentType, isBiological: true },
+        include: { child: { select: { firstName: true, lastName: true } } },
+      });
+      if (conflicts.length > 0) {
+        const names = conflicts
+          .map((c) => `${c.child.firstName} ${c.child.lastName ?? ""}`.trim())
+          .join(", ");
+        return NextResponse.json(
+          { error: `Cannot link as ${parentType}: already has a biological ${parentType} \u2014 ${names}` },
+          { status: 400 }
+        );
+      }
     }
 
     const person = await prisma.person.create({ data: personData });
@@ -76,7 +106,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (fatherId || motherId || spouseId) {
+    if (parentType && childIdsList.length > 0) {
+      await prisma.parentChild.createMany({
+        data: childIdsList.map((childId: string) => ({
+          parentId: person.id,
+          childId,
+          parentType,
+        })),
+      });
+    }
+
+    if (fatherId || motherId || spouseId || childIdsList.length > 0) {
       await recalculateGenerations();
     }
 
