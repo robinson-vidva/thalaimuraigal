@@ -29,7 +29,6 @@ function Field({
 function genderLabel(g: string | null): string | null {
   if (g === "M") return "Male";
   if (g === "F") return "Female";
-  if (g === "O") return "Other";
   return null;
 }
 

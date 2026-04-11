@@ -272,7 +272,6 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
               <option value="">Select...</option>
               <option value="M">Male</option>
               <option value="F">Female</option>
-              <option value="O">Other</option>
             </select>
           </div>
         </div>
