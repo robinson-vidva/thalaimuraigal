@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { PersonFormData, Gender } from "@/types";
 import LocationSearch from "./LocationSearch";
+import { validatePersonDates } from "@/lib/date-validation";
 
 interface PersonOption { id: string; firstName: string; lastName: string | null; gender: string | null; }
 interface PersonFormProps { initialData?: PersonFormData & { id?: string }; isEdit?: boolean; }
@@ -54,6 +55,19 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
     e.preventDefault();
     setLoading(true);
     setError("");
+
+    // Reject impossible dates (Feb 30, future DOBs, death-before-birth, etc.)
+    // before we even send the request, so the user gets immediate feedback.
+    const dateError = validatePersonDates({
+      dateOfBirth: form.dateOfBirth,
+      dateOfDeath: form.dateOfDeath,
+    });
+    if (dateError) {
+      setError(dateError);
+      setLoading(false);
+      return;
+    }
+
     // Clean the payload:
     //  - drop undefined (never touched)
     //  - for single-valued relationship links, convert "" to null so the

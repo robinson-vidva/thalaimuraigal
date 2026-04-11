@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { recalculateGenerations } from "@/lib/generations";
+import { validatePersonDates } from "@/lib/date-validation";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -56,6 +57,14 @@ export async function POST(request: NextRequest) {
         { error: "First name is required" },
         { status: 400 }
       );
+    }
+
+    const dateError = validatePersonDates({
+      dateOfBirth: personData.dateOfBirth,
+      dateOfDeath: personData.dateOfDeath,
+    });
+    if (dateError) {
+      return NextResponse.json({ error: dateError }, { status: 400 });
     }
 
     const childIdsList: string[] = Array.isArray(childrenIds) ? childrenIds.filter((id: unknown): id is string => typeof id === "string" && id.length > 0) : [];

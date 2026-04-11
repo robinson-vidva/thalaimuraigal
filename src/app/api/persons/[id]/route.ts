@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { recalculateGenerations, validateNoCycle } from "@/lib/generations";
+import { validatePersonDates } from "@/lib/date-validation";
 
 export async function GET(
   _request: NextRequest,
@@ -50,6 +51,29 @@ export async function PUT(
     const updateData: Record<string, unknown> = {};
     for (const key of allowedFields) {
       if (key in rest) updateData[key] = rest[key];
+    }
+
+    // Validate dates against the merged view of existing + incoming values.
+    // This catches impossible dates (Feb 30, future, death-before-birth) even
+    // when only one of the two fields is being changed in this request.
+    if ("dateOfBirth" in updateData || "dateOfDeath" in updateData) {
+      const existing = await prisma.person.findUnique({
+        where: { id },
+        select: { dateOfBirth: true, dateOfDeath: true },
+      });
+      const mergedBirth = "dateOfBirth" in updateData
+        ? (updateData.dateOfBirth as string | null | undefined)
+        : existing?.dateOfBirth;
+      const mergedDeath = "dateOfDeath" in updateData
+        ? (updateData.dateOfDeath as string | null | undefined)
+        : existing?.dateOfDeath;
+      const dateError = validatePersonDates({
+        dateOfBirth: mergedBirth,
+        dateOfDeath: mergedDeath,
+      });
+      if (dateError) {
+        return NextResponse.json({ error: dateError }, { status: 400 });
+      }
     }
 
     const person = await prisma.person.update({ where: { id }, data: updateData });
