@@ -1,16 +1,21 @@
 // Shared date validation used by both the person form (client) and the
 // /api/persons routes (server). Dates in this app are stored as strings in
-// one of three accepted formats:
-//   - "YYYY-MM-DD"     full calendar date
-//   - "YYYY"           year only, when the exact day is unknown
-//   - "MMM-DD"         month + day only, when the year is unknown but the
-//                      annual birthday / anniversary / remembrance day is
-//                      known (e.g. "Apr-08"). The calendar still surfaces
-//                      these as recurring events.
+// one of these accepted formats:
+//   - "YYYY-MMM-DD"    full calendar date (canonical, e.g. "1985-Apr-08")
+//   - "MMM-DD"         month + day only, when the year is unknown (e.g.
+//                      "Apr-08"). The calendar still surfaces these as
+//                      recurring annual events.
+//   - "YYYY-MM-DD"     legacy numeric-month full date (still accepted on
+//                      read so existing rows keep validating; the form's
+//                      PartialDatePicker re-emits these as YYYY-MMM-DD the
+//                      next time the record is saved).
+//   - "YYYY"           legacy year-only, when the month and day are both
+//                      unknown.
 // Anything else is rejected up front so bad data never lands in the DB.
 
 const YEAR_ONLY = /^\d{4}$/;
-const FULL_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const FULL_NUMERIC_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const FULL_MMM_DATE = /^(\d{4})-([A-Za-z]{3})-(\d{1,2})$/;
 const MONTH_DAY = /^([A-Za-z]{3})-(\d{1,2})$/;
 
 // Absolute lower bound for any family-tree year. Rejects typos like "193"
@@ -52,6 +57,37 @@ export function validatePartialDate(
     return null;
   }
 
+  // Canonical full date form: "1985-Apr-08"
+  const canonical = trimmed.match(FULL_MMM_DATE);
+  if (canonical) {
+    const year = parseInt(canonical[1], 10);
+    const monthNum = monthAbbrevToNumber(canonical[2]);
+    const day = parseInt(canonical[3], 10);
+    if (year < MIN_YEAR || year > maxYear) {
+      return `${fieldLabel}: year ${year} is out of range (expected ${MIN_YEAR}\u2013${maxYear})`;
+    }
+    if (monthNum === null) {
+      return `${fieldLabel}: "${canonical[2]}" is not a valid month abbreviation (expected Jan\u2013Dec)`;
+    }
+    if (day < 1 || day > 31) {
+      return `${fieldLabel}: day ${day} is not valid (must be 1\u201331)`;
+    }
+    const d = new Date(year, monthNum - 1, day);
+    if (
+      d.getFullYear() !== year ||
+      d.getMonth() !== monthNum - 1 ||
+      d.getDate() !== day
+    ) {
+      return `${fieldLabel}: ${trimmed} is not a real calendar date`;
+    }
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+    if (d.getTime() > todayEnd.getTime()) {
+      return `${fieldLabel}: date cannot be in the future`;
+    }
+    return null;
+  }
+
   // Month + day form: "Apr-08". No year, so no future-date check — an
   // annual recurring birthday is always valid regardless of when it's
   // entered. Feb 29 is accepted because without a year we can't know
@@ -74,8 +110,10 @@ export function validatePartialDate(
     return null;
   }
 
-  // Full date form: "1985-04-08"
-  const match = trimmed.match(FULL_DATE);
+  // Legacy numeric full date form: "1985-04-08". Still accepted for
+  // backward compatibility with existing rows — the PartialDatePicker will
+  // re-emit these as YYYY-MMM-DD the next time the record is saved.
+  const match = trimmed.match(FULL_NUMERIC_DATE);
   if (!match) {
     return `${fieldLabel}: use YYYY or YYYY-MM-DD (got "${trimmed}")`;
   }
@@ -118,37 +156,61 @@ export function validatePartialDate(
   return null;
 }
 
-// Parse either format into the earliest point it could represent (Jan 1 for
-// year-only strings). Used to check ordering between two partial dates.
+// Parse any of the accepted formats (except MMM-DD, which has no year) into
+// the earliest point it could represent (Jan 1 for year-only strings). Used
+// to check ordering between two partial dates — MMM-DD returns null because
+// without a year we can't establish when it fell in a timeline.
 function parseLowerBound(value: string): Date | null {
   const trimmed = value.trim();
   if (YEAR_ONLY.test(trimmed)) {
     return new Date(parseInt(trimmed, 10), 0, 1);
   }
-  const match = trimmed.match(FULL_DATE);
-  if (match) {
+  const canonical = trimmed.match(FULL_MMM_DATE);
+  if (canonical) {
+    const monthNum = monthAbbrevToNumber(canonical[2]);
+    if (monthNum !== null) {
+      return new Date(
+        parseInt(canonical[1], 10),
+        monthNum - 1,
+        parseInt(canonical[3], 10)
+      );
+    }
+  }
+  const numeric = trimmed.match(FULL_NUMERIC_DATE);
+  if (numeric) {
     return new Date(
-      parseInt(match[1], 10),
-      parseInt(match[2], 10) - 1,
-      parseInt(match[3], 10)
+      parseInt(numeric[1], 10),
+      parseInt(numeric[2], 10) - 1,
+      parseInt(numeric[3], 10)
     );
   }
   return null;
 }
 
-// Parse either format into the latest point it could represent (Dec 31 for
-// year-only strings). Used to check ordering between two partial dates.
+// Parse any of the accepted formats (except MMM-DD) into the latest point
+// it could represent (Dec 31 for year-only strings). See parseLowerBound.
 function parseUpperBound(value: string): Date | null {
   const trimmed = value.trim();
   if (YEAR_ONLY.test(trimmed)) {
     return new Date(parseInt(trimmed, 10), 11, 31);
   }
-  const match = trimmed.match(FULL_DATE);
-  if (match) {
+  const canonical = trimmed.match(FULL_MMM_DATE);
+  if (canonical) {
+    const monthNum = monthAbbrevToNumber(canonical[2]);
+    if (monthNum !== null) {
+      return new Date(
+        parseInt(canonical[1], 10),
+        monthNum - 1,
+        parseInt(canonical[3], 10)
+      );
+    }
+  }
+  const numeric = trimmed.match(FULL_NUMERIC_DATE);
+  if (numeric) {
     return new Date(
-      parseInt(match[1], 10),
-      parseInt(match[2], 10) - 1,
-      parseInt(match[3], 10)
+      parseInt(numeric[1], 10),
+      parseInt(numeric[2], 10) - 1,
+      parseInt(numeric[3], 10)
     );
   }
   return null;

@@ -15,19 +15,33 @@ export interface CalendarEvent {
   year?: number;      // original year, if known — omitted for MMM-DD form
 }
 
-// Accepts three formats:
-//   "YYYY-MM-DD" - full calendar date
-//   "MMM-DD"     - month + day only, no year (recurring event, age unknown)
-//   "YYYY"       - year only, skipped (no month/day to place on a calendar)
+// Accepts four formats:
+//   "YYYY-MMM-DD"  canonical full date (e.g. "1985-Apr-08")
+//   "YYYY-MM-DD"   legacy numeric-month full date
+//   "MMM-DD"       month + day only, no year (recurring event, age unknown)
+//   "YYYY"         year only, skipped (no month/day to place on a calendar)
 function parseDate(dateStr: string): { month: number; day: number; year?: number } | null {
   if (!dateStr) return null;
-  // Full date form
-  const full = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (full) {
+  // Canonical YYYY-MMM-DD
+  const canonical = dateStr.match(/^(\d{4})-([A-Za-z]{3})-(\d{1,2})$/);
+  if (canonical) {
+    const month = monthAbbrevToNumber(canonical[2]);
+    if (month === null) return null;
+    const day = parseInt(canonical[3], 10);
+    if (day < 1 || day > 31) return null;
     return {
-      year: parseInt(full[1], 10),
-      month: parseInt(full[2], 10),
-      day: parseInt(full[3], 10),
+      year: parseInt(canonical[1], 10),
+      month,
+      day,
+    };
+  }
+  // Legacy YYYY-MM-DD (numeric month)
+  const numeric = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (numeric) {
+    return {
+      year: parseInt(numeric[1], 10),
+      month: parseInt(numeric[2], 10),
+      day: parseInt(numeric[3], 10),
     };
   }
   // Month + day form

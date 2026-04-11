@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { PersonFormData, Gender } from "@/types";
 import LocationSearch from "./LocationSearch";
+import PartialDatePicker from "./PartialDatePicker";
 import { validatePersonDates, validatePartialDate } from "@/lib/date-validation";
 
 interface PersonOption { id: string; firstName: string; lastName: string | null; gender: string | null; }
@@ -293,8 +294,12 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
         {/* Birth row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
-            <input type="text" placeholder="YYYY-MM-DD, YYYY, or MMM-DD" value={form.dateOfBirth ?? ""} onChange={(e) => update("dateOfBirth", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+            <PartialDatePicker
+              label="Date of Birth"
+              value={form.dateOfBirth ?? ""}
+              onChange={(v) => update("dateOfBirth", v)}
+              hint="Leave Year blank if only the month and day are known."
+            />
           </div>
           <div>
             <LocationSearch
@@ -321,8 +326,11 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
           {!form.isLiving && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3 pl-6 border-l-2 border-gray-200">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date of Death</label>
-                <input type="text" placeholder="YYYY-MM-DD, YYYY, or MMM-DD" value={form.dateOfDeath ?? ""} onChange={(e) => update("dateOfDeath", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+                <PartialDatePicker
+                  label="Date of Death"
+                  value={form.dateOfDeath ?? ""}
+                  onChange={(v) => update("dateOfDeath", v)}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Place of Death</label>
@@ -445,21 +453,12 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
               </div>
 
               {relKind === "spouse" && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Marriage date <span className="text-gray-400 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="YYYY-MM-DD, YYYY, or MMM-DD"
-                    value={pendingMarriageDate}
-                    onChange={(e) => setPendingMarriageDate(e.target.value)}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500 bg-white"
-                  />
-                  <p className="text-[11px] text-gray-400 mt-1">
-                    Added to the family calendar as an annual anniversary. Use MMM-DD (e.g. Apr-08) when the year is unknown.
-                  </p>
-                </div>
+                <PartialDatePicker
+                  label="Marriage date (optional)"
+                  value={pendingMarriageDate}
+                  onChange={setPendingMarriageDate}
+                  hint="Added to the family calendar as an annual anniversary. Leave Year blank if it's unknown."
+                />
               )}
 
               {relSearch && (
