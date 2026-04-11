@@ -378,11 +378,15 @@ export default function TreePage() {
   const oY = -minY + pad;
 
   // ── Build parent→child connectors from the data ──
-  // Every parent_child row whose BOTH endpoints are placed contributes a line.
-  // The line goes from the parent's bottom-center directly to the child's
-  // top-center. When the child has two placed parents, we draw TWO lines
-  // (one from each parent) — that's the honest representation, not a
-  // midpoint fudge.
+  // A child whose two parents are married to each other only gets ONE line,
+  // drawn from the midpoint of the parents (at the bottom of their row) down
+  // to the child. The marriage is the unit that produced the child, so
+  // drawing two separate lines — one from each spouse — is wrong; it
+  // represents the couple as if the parents were unrelated co-parents. We
+  // still emit individual lines when:
+  //   • the child has only one parent in the data (single-parent case), or
+  //   • the child's two placed parents are not spouses of each other
+  //     (step-parent / unmarried co-parents).
   interface ParentChildEdge {
     px: number;
     py: number;
@@ -391,10 +395,63 @@ export default function TreePage() {
     key: string;
   }
   const parentChildEdges: ParentChildEdge[] = [];
+
+  // Group placed parents by their placed child.
+  const parentsByChild = new Map<string, Placement[]>();
   for (const p of allPlacements) {
     for (const childId of p.person.childIds) {
-      const child = placements.get(childId);
-      if (!child) continue;
+      if (!placements.has(childId)) continue;
+      if (!parentsByChild.has(childId)) parentsByChild.set(childId, []);
+      parentsByChild.get(childId)!.push(p);
+    }
+  }
+
+  function findMarriedPair(parents: Placement[]): [Placement, Placement] | null {
+    for (let i = 0; i < parents.length; i++) {
+      for (let j = i + 1; j < parents.length; j++) {
+        if (parents[i].person.spouseIds.includes(parents[j].person.id)) {
+          return [parents[i], parents[j]];
+        }
+      }
+    }
+    return null;
+  }
+
+  for (const [childId, parents] of parentsByChild.entries()) {
+    const child = placements.get(childId)!;
+    if (parents.length >= 2) {
+      const pair = findMarriedPair(parents);
+      if (pair) {
+        // One line from the couple midpoint down to the child. We start from
+        // the bottom of the parent row at the midpoint between the two cards
+        // so the curve visibly descends from "between the parents" rather
+        // than from either individual card.
+        const [a, b] = pair;
+        const midX = (a.x + b.x) / 2;
+        parentChildEdges.push({
+          px: midX,
+          py: a.y + CARD_H,
+          cx: child.x,
+          cy: child.y,
+          key: `couple-${[a.person.id, b.person.id].sort().join("-")}->${childId}`,
+        });
+        // Any additional parents (step-parents from a different marriage, etc.)
+        // still get their own individual line.
+        for (const extra of parents) {
+          if (extra === a || extra === b) continue;
+          parentChildEdges.push({
+            px: extra.x,
+            py: extra.y + CARD_H,
+            cx: child.x,
+            cy: child.y,
+            key: `${extra.person.id}->${childId}`,
+          });
+        }
+        continue;
+      }
+    }
+    // Fallback: single-parent or unmarried co-parents — one line each.
+    for (const p of parents) {
       parentChildEdges.push({
         px: p.x,
         py: p.y + CARD_H,
