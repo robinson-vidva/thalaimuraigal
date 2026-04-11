@@ -3,11 +3,18 @@ import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+interface Partner {
+  name: string;
+  attributes: Record<string, string>;
+  _id: string;
+}
+
 interface TreeNode {
   name: string;
   attributes: Record<string, string>;
   children: TreeNode[];
   _id: string;
+  partner?: Partner;
 }
 
 export async function GET() {
@@ -49,22 +56,38 @@ export async function GET() {
     const person = personMap.get(personId);
     if (!person) return null;
 
+    // Pick the first unvisited spouse to render as a partner card.
     const spouses = spouseMap.get(personId) || [];
-    const spouseNames = spouses
-      .map((sid) => personMap.get(sid))
-      .filter(Boolean)
-      .map((s) => `${s!.firstName} ${s!.lastName ?? ""}`.trim());
+    let partner: Partner | undefined;
+    for (const sid of spouses) {
+      if (visited.has(sid)) continue;
+      const sp = personMap.get(sid);
+      if (!sp) continue;
+      partner = {
+        name: `${sp.firstName} ${sp.lastName ?? ""}`.trim(),
+        _id: sp.id,
+        attributes: {
+          ...(sp.gender ? { gender: sp.gender } : {}),
+          ...(sp.dateOfBirth ? { born: sp.dateOfBirth } : {}),
+          ...(sp.dateOfDeath ? { died: sp.dateOfDeath } : {}),
+          ...(sp.generation !== null ? { generation: String(sp.generation) } : {}),
+        },
+      };
+      visited.add(sid);
+      break;
+    }
+    // Mark any remaining spouses as visited too, so they don't re-render as roots.
+    for (const sid of spouses) visited.add(sid);
 
-    const children = parentToChildren.get(personId) || [];
-    // Also include children of spouses
+    // Children: merge the person's children with the partner's children so
+    // half-siblings and shared kids all descend from this couple unit.
+    const children = [...(parentToChildren.get(personId) || [])];
     for (const sid of spouses) {
       const spouseChildren = parentToChildren.get(sid) || [];
       for (const c of spouseChildren) {
         if (!children.includes(c)) children.push(c);
       }
     }
-    // Mark spouses as visited so they don't appear as separate roots
-    for (const sid of spouses) visited.add(sid);
 
     const childNodes = children
       .map((cid) => buildNode(cid))
@@ -77,10 +100,10 @@ export async function GET() {
         ...(person.gender ? { gender: person.gender } : {}),
         ...(person.dateOfBirth ? { born: person.dateOfBirth } : {}),
         ...(person.dateOfDeath ? { died: person.dateOfDeath } : {}),
-        ...(spouseNames.length > 0 ? { spouse: spouseNames.join(", ") } : {}),
         ...(person.generation !== null ? { generation: String(person.generation) } : {}),
       },
       children: childNodes,
+      ...(partner ? { partner } : {}),
     };
   }
 

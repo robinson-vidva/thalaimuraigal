@@ -3,15 +3,22 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 
+interface Partner {
+  name: string;
+  attributes?: Record<string, string>;
+  _id?: string;
+}
+
 interface TreeNode {
   name: string;
   attributes?: Record<string, string>;
   children?: TreeNode[];
   _id?: string;
+  partner?: Partner;
 }
 
 interface FlatNode {
-  node: TreeNode;
+  node: TreeNode | Partner;
   x: number;
   y: number;
 }
@@ -23,15 +30,22 @@ interface Connector {
   y2: number;
 }
 
+interface Marriage {
+  x1: number;
+  x2: number;
+  y: number;
+}
+
 // ── Layout constants ──
 const CARD_W = 220;
-const CARD_H_SINGLE = 54;
-const CARD_H_SPOUSE = 74;
-const H_GAP = 30;
-const V_GAP = 70;
+const CARD_H = 54;
+const PAIR_GAP = 28;  // horizontal gap between spouses inside a couple
+const H_GAP = 30;     // horizontal gap between sibling subtrees
+const V_GAP = 70;     // vertical gap between generations
 
-function cardH(node: TreeNode): number {
-  return node.attributes?.spouse ? CARD_H_SPOUSE : CARD_H_SINGLE;
+// A person + their spouse takes two cards side by side.
+function pairWidth(node: TreeNode): number {
+  return node.partner ? 2 * CARD_W + PAIR_GAP : CARD_W;
 }
 
 // ── Recursive layout engine ──
@@ -46,14 +60,15 @@ interface LayoutResult {
 
 function computeLayout(node: TreeNode, depth: number): LayoutResult {
   const kids = (node.children || []).map((c) => computeLayout(c, depth + 1));
+  const selfW = pairWidth(node);
 
   if (kids.length === 0) {
-    return { node, relX: 0, depth, width: CARD_W, children: [] };
+    return { node, relX: 0, depth, width: selfW, children: [] };
   }
 
   // Total width of children placed side by side
   const totalChildW = kids.reduce((s, k, i) => s + k.width + (i > 0 ? H_GAP : 0), 0);
-  const subtreeW = Math.max(CARD_W, totalChildW);
+  const subtreeW = Math.max(selfW, totalChildW);
 
   // Position children left-to-right, centered under parent
   let cursor = -totalChildW / 2;
@@ -66,36 +81,58 @@ function computeLayout(node: TreeNode, depth: number): LayoutResult {
 }
 
 // ── Flatten to absolute positions ──
+// `absX` represents the CENTER of the node's slot. For a couple that's the
+// midpoint between the two spouse cards; for a single person it's the card
+// center. Children always descend from this midpoint so the generation flow
+// stays straight.
 function flatten(
   lr: LayoutResult,
   parentAbsX: number,
   absY: number
-): { nodes: FlatNode[]; connectors: Connector[] } {
+): { nodes: FlatNode[]; connectors: Connector[]; marriages: Marriage[] } {
   const absX = parentAbsX + lr.relX;
-  const h = cardH(lr.node);
-  const result: { nodes: FlatNode[]; connectors: Connector[] } = {
-    nodes: [{ node: lr.node, x: absX, y: absY }],
-    connectors: [],
-  };
+  const hasPartner = !!lr.node.partner;
+  const nodes: FlatNode[] = [];
+  const marriages: Marriage[] = [];
 
-  const childY = absY + h + V_GAP;
+  if (hasPartner) {
+    // Two cards side-by-side, separated by PAIR_GAP.
+    const offset = (CARD_W + PAIR_GAP) / 2;
+    const primaryX = absX - offset;
+    const partnerX = absX + offset;
+    nodes.push({ node: lr.node, x: primaryX, y: absY });
+    nodes.push({ node: lr.node.partner!, x: partnerX, y: absY });
+    // Marriage line between the inner edges of the two cards, vertically centered.
+    marriages.push({
+      x1: primaryX + CARD_W / 2,
+      x2: partnerX - CARD_W / 2,
+      y: absY + CARD_H / 2,
+    });
+  } else {
+    nodes.push({ node: lr.node, x: absX, y: absY });
+  }
+
+  const connectors: Connector[] = [];
+  const childY = absY + CARD_H + V_GAP;
 
   for (const kid of lr.children) {
     const kidAbsX = absX + kid.relX;
-    // Connector: parent bottom-center → child top-center
-    result.connectors.push({
+    // Parent-child connector: start from the couple midpoint (or single-card
+    // center) at the bottom of the card row, curve down to the child's top.
+    connectors.push({
       x1: absX,
-      y1: absY + h,
+      y1: absY + CARD_H,
       x2: kidAbsX,
       y2: childY,
     });
 
     const sub = flatten(kid, absX, childY);
-    result.nodes.push(...sub.nodes);
-    result.connectors.push(...sub.connectors);
+    nodes.push(...sub.nodes);
+    connectors.push(...sub.connectors);
+    marriages.push(...sub.marriages);
   }
 
-  return result;
+  return { nodes, connectors, marriages };
 }
 
 // ── Curved connector path ──
@@ -105,10 +142,9 @@ function connectorPath(c: Connector): string {
 }
 
 // ── Tree card component ──
-function TreeCard({ node, x, y }: { node: TreeNode; x: number; y: number }) {
+// Renders a single person card. Couples are two of these side by side.
+function TreeCard({ node, x, y }: { node: TreeNode | Partner; x: number; y: number }) {
   const gender = node.attributes?.gender;
-  const hasSpouse = !!node.attributes?.spouse;
-  const h = cardH(node);
   const accent = gender === "M" ? "#92400e" : gender === "F" ? "#b45309" : "#6b7280";
   const bg = gender === "M" ? "#fffbeb" : gender === "F" ? "#fff7ed" : "#f9fafb";
   const initials = node.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
@@ -116,33 +152,23 @@ function TreeCard({ node, x, y }: { node: TreeNode; x: number; y: number }) {
   return (
     <g transform={`translate(${x - CARD_W / 2}, ${y})`}>
       {/* Shadow */}
-      <rect x={2} y={3} width={CARD_W} height={h} rx={10} fill="rgba(0,0,0,0.06)" />
+      <rect x={2} y={3} width={CARD_W} height={CARD_H} rx={10} fill="rgba(0,0,0,0.06)" />
       {/* Card */}
-      <rect width={CARD_W} height={h} rx={10} fill={bg} stroke={accent} strokeWidth={1.5} />
+      <rect width={CARD_W} height={CARD_H} rx={10} fill={bg} stroke={accent} strokeWidth={1.5} />
       {/* Left accent bar */}
-      <rect width={4} height={h} rx={2} fill={accent} />
+      <rect width={4} height={CARD_H} rx={2} fill={accent} />
       {/* Avatar circle */}
-      <circle cx={26} cy={hasSpouse ? 23 : h / 2} r={14} fill={accent} />
-      <text x={26} y={hasSpouse ? 27 : h / 2 + 4} fill="white" fontSize={10} fontWeight="bold" textAnchor="middle">{initials}</text>
+      <circle cx={26} cy={CARD_H / 2} r={14} fill={accent} />
+      <text x={26} y={CARD_H / 2 + 4} fill="white" fontSize={10} fontWeight="bold" textAnchor="middle">{initials}</text>
       {/* Name */}
-      <text x={48} y={hasSpouse ? 20 : h / 2 - 3} fill="#1c1917" fontSize={12} fontWeight="700">
+      <text x={48} y={CARD_H / 2 - 3} fill="#1c1917" fontSize={12} fontWeight="700">
         {node.name.length > 20 ? node.name.slice(0, 18) + "..." : node.name}
       </text>
       {/* Dates */}
       {node.attributes?.born && (
-        <text x={48} y={hasSpouse ? 33 : h / 2 + 10} fill="#a1a1aa" fontSize={9}>
+        <text x={48} y={CARD_H / 2 + 10} fill="#a1a1aa" fontSize={9}>
           {node.attributes.born}{node.attributes.died ? ` - ${node.attributes.died}` : ""}
         </text>
-      )}
-      {/* Spouse row */}
-      {hasSpouse && (
-        <>
-          <line x1={10} y1={42} x2={CARD_W - 10} y2={42} stroke={accent} strokeWidth={0.5} strokeOpacity={0.3} />
-          <text x={16} y={60} fill={accent} fontSize={11}>&#9829;</text>
-          <text x={30} y={60} fill="#78716c" fontSize={10} fontWeight="500">
-            {node.attributes!.spouse!.length > 22 ? node.attributes!.spouse!.slice(0, 20) + "..." : node.attributes!.spouse}
-          </text>
-        </>
       )}
       {/* Generation badge */}
       {node.attributes?.generation && (
@@ -154,7 +180,7 @@ function TreeCard({ node, x, y }: { node: TreeNode; x: number; y: number }) {
       {/* Clickable overlay */}
       {node._id && (
         <a href={`/persons/${node._id}`} style={{ cursor: "pointer" }}>
-          <rect width={CARD_W} height={h} fill="transparent" rx={10} />
+          <rect width={CARD_W} height={CARD_H} fill="transparent" rx={10} />
         </a>
       )}
     </g>
@@ -240,15 +266,17 @@ export default function TreePage() {
   // ── Layout multiple root trees side by side (no synthetic "Family" node) ──
   const layouts = treeData.map((root) => computeLayout(root, 0));
 
-  let allNodes: FlatNode[] = [];
-  let allConnectors: Connector[] = [];
+  const allNodes: FlatNode[] = [];
+  const allConnectors: Connector[] = [];
+  const allMarriages: Marriage[] = [];
 
   // Place each root tree next to each other horizontally
   let offsetX = 0;
   for (const lr of layouts) {
-    const { nodes, connectors } = flatten(lr, offsetX, 0);
+    const { nodes, connectors, marriages } = flatten(lr, offsetX, 0);
     allNodes.push(...nodes);
     allConnectors.push(...connectors);
+    allMarriages.push(...marriages);
     offsetX += lr.width + H_GAP * 2;
   }
 
@@ -259,7 +287,7 @@ export default function TreePage() {
     minX = Math.min(minX, n.x - CARD_W / 2);
     maxX = Math.max(maxX, n.x + CARD_W / 2);
     minY = Math.min(minY, n.y);
-    maxY = Math.max(maxY, n.y + CARD_H_SPOUSE);
+    maxY = Math.max(maxY, n.y + CARD_H);
   }
   const svgW = maxX - minX + pad * 2;
   const svgH = maxY - minY + pad * 2;
@@ -302,7 +330,7 @@ export default function TreePage() {
               transformOrigin: "center center",
             }}
           >
-            {/* Curved connectors */}
+            {/* Parent-child curved connectors */}
             {allConnectors.map((c, i) => (
               <path
                 key={`c-${i}`}
@@ -318,6 +346,29 @@ export default function TreePage() {
                 strokeOpacity={0.45}
               />
             ))}
+
+            {/* Marriage connectors (horizontal line + heart between spouses) */}
+            {allMarriages.map((m, i) => {
+              const x1 = m.x1 + oX;
+              const x2 = m.x2 + oX;
+              const y = m.y + oY;
+              const midX = (x1 + x2) / 2;
+              return (
+                <g key={`m-${i}`}>
+                  <line
+                    x1={x1}
+                    y1={y}
+                    x2={x2}
+                    y2={y}
+                    stroke="#b45309"
+                    strokeWidth={2}
+                    strokeOpacity={0.6}
+                  />
+                  <circle cx={midX} cy={y} r={7} fill="#fff7ed" stroke="#b45309" strokeWidth={1.2} />
+                  <text x={midX} y={y + 3} fill="#b45309" fontSize={10} textAnchor="middle">&#9829;</text>
+                </g>
+              );
+            })}
 
             {/* Cards */}
             {allNodes.map((n, i) => (
