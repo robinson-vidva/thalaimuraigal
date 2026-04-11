@@ -14,7 +14,7 @@ interface Person {
   generation: number | null;
   photoUrl: string | null;
   childOf: {
-    parent: { id: string; firstName: string; lastName: string | null };
+    parent: { id: string; firstName: string; lastName: string | null; gender: string | null };
     parentType: string;
   }[];
   spouse1: {
@@ -44,8 +44,19 @@ export default function PersonsPage() {
       .then((data) => { setPersons(data); setLoading(false); });
   }, [search, genderFilter, livingFilter, generationFilter]);
 
-  const getParentName = (person: Person, type: string) => {
-    const link = person.childOf.find((c) => c.parentType === type);
+  // Resilient to parent_type rows that don't strictly equal "father"/"mother"
+  // (legacy casing, missing values, etc.) by falling back to the parent's
+  // own gender. Matches the same logic the profile page uses so every
+  // surface agrees on who the father/mother are.
+  const getParentName = (person: Person, type: "father" | "mother") => {
+    const link = person.childOf.find((c) => {
+      const pt = (c.parentType ?? "").toLowerCase().trim();
+      if (pt === type) return true;
+      if (pt === "father" || pt === "mother") return false; // explicitly tagged as the other role
+      if (type === "father") return c.parent.gender === "M";
+      if (type === "mother") return c.parent.gender === "F";
+      return false;
+    });
     if (!link) return "-";
     return `${link.parent.firstName} ${link.parent.lastName ?? ""}`.trim();
   };

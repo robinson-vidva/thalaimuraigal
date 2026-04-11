@@ -40,8 +40,30 @@ export async function getPersonRelationships(
     include: { parent: { select: selectFields } },
   });
 
-  const father = parentLinks.find((p) => p.parentType === "father")?.parent ?? null;
-  const mother = parentLinks.find((p) => p.parentType === "mother")?.parent ?? null;
+  // Categorise each parent link as father or mother. We prefer the explicit
+  // parent_type column when it matches, but we fall back to the parent's
+  // own gender when the column is missing, miscased, or set to anything
+  // outside the expected set — otherwise the profile page silently says
+  // "Unknown" while the tree view is still drawing the edge, and the two
+  // surfaces disagree about the same underlying row. Case-insensitive so
+  // any legacy "Father"/"FATHER" writes are also picked up.
+  function resolveParentRole(link: (typeof parentLinks)[number]): "father" | "mother" | null {
+    const pt = (link.parentType ?? "").toLowerCase().trim();
+    if (pt === "father") return "father";
+    if (pt === "mother") return "mother";
+    const g = link.parent.gender;
+    if (g === "M") return "father";
+    if (g === "F") return "mother";
+    return null;
+  }
+
+  let father: SimplePerson | null = null;
+  let mother: SimplePerson | null = null;
+  for (const link of parentLinks) {
+    const role = resolveParentRole(link);
+    if (role === "father" && !father) father = link.parent;
+    else if (role === "mother" && !mother) mother = link.parent;
+  }
 
   const spouseLinks1 = await prisma.spouse.findMany({
     where: { person1Id: personId },

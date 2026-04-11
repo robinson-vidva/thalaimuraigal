@@ -33,13 +33,13 @@ export async function GET(request: NextRequest) {
     orderBy: [{ generation: "asc" }, { birthOrder: "asc" }, { firstName: "asc" }],
     include: {
       childOf: {
-        include: { parent: { select: { id: true, firstName: true, lastName: true } } },
+        include: { parent: { select: { id: true, firstName: true, lastName: true, gender: true } } },
       },
       spouse1: {
-        include: { person2: { select: { id: true, firstName: true, lastName: true } } },
+        include: { person2: { select: { id: true, firstName: true, lastName: true, gender: true } } },
       },
       spouse2: {
-        include: { person1: { select: { id: true, firstName: true, lastName: true } } },
+        include: { person1: { select: { id: true, firstName: true, lastName: true, gender: true } } },
       },
     },
   });
