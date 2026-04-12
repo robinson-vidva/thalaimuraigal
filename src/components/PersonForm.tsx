@@ -414,12 +414,14 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
                     <span className="font-semibold">{chipLabel(r)}</span>
                     <span>&middot;</span>
                     <span>{name}</span>
-                    {anniversary && (
+                    {anniversary ? (
                       <>
-                        <span className="text-amber-600">&middot;</span>
-                        <span className="text-amber-700">&#9829; {anniversary}</span>
+                        <span className="text-rose-400">&middot;</span>
+                        <span className="text-rose-600">&#9829; {anniversary}</span>
                       </>
-                    )}
+                    ) : r.kind === "spouse" ? (
+                      <span className="text-rose-400 text-[10px]">&#9829; no date</span>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => removeRelationship(r)}
@@ -434,6 +436,24 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
             </div>
           )}
         </div>
+
+        {/* Inline anniversary prompt — when a spouse is linked but has no
+            marriage date, show an eye-catching rose-colored mini-form so
+            the user is nudged to add one without having to remove and
+            re-add the spouse link. */}
+        {form.spouseId && !form.marriageDate && (
+          <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-lg">
+            <p className="text-xs text-rose-700 font-semibold mb-2 flex items-center gap-1">
+              <span>&#9829;</span> Add your marriage anniversary
+            </p>
+            <PartialDatePicker
+              label=""
+              value={form.marriageDate ?? ""}
+              onChange={(v) => update("marriageDate", v)}
+              hint="Shows up on the family calendar as an annual event."
+            />
+          </div>
+        )}
 
         {/* Add relationship button / inline picker */}
         <div className="mt-4">
@@ -481,12 +501,17 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
               </div>
 
               {relKind === "spouse" && (
-                <PartialDatePicker
-                  label="Marriage date (optional)"
-                  value={pendingMarriageDate}
-                  onChange={setPendingMarriageDate}
-                  hint="Added to the family calendar as an annual anniversary. Pick 'Month & day only' if the year is unknown."
-                />
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg">
+                  <p className="text-xs text-rose-700 font-semibold mb-2 flex items-center gap-1">
+                    <span>&#9829;</span> When did they get married?
+                  </p>
+                  <PartialDatePicker
+                    label=""
+                    value={pendingMarriageDate}
+                    onChange={setPendingMarriageDate}
+                    hint="Optional — shows up on the family calendar as an annual anniversary."
+                  />
+                </div>
               )}
 
               {relSearch && (
