@@ -32,11 +32,21 @@ function genderLabel(g: string | null): string | null {
   return null;
 }
 
-function familySideLabel(s: string | null): string | null {
-  if (s === "paternal") return "Paternal";
-  if (s === "maternal") return "Maternal";
-  if (s === "both") return "Both sides";
-  return null;
+// Map a birth year to the widely-known social-generation label. Purely
+// for fun — it's decorative, not a genealogical concept. Boundaries are
+// the most common US-centric ones (Pew Research). Null if no year.
+function socialGeneration(dateOfBirth: string | null): string | null {
+  if (!dateOfBirth) return null;
+  const m = dateOfBirth.match(/^(\d{4})/);
+  if (!m) return null;
+  const y = parseInt(m[1], 10);
+  if (y <= 1927) return "Greatest Generation";
+  if (y <= 1945) return "Silent Generation";
+  if (y <= 1964) return "Baby Boomer";
+  if (y <= 1980) return "Gen X";
+  if (y <= 1996) return "Millennial";
+  if (y <= 2012) return "Gen Z";
+  return "Gen Alpha";
 }
 
 function formatDateWithApprox(date: string | null, approx: boolean): string | null {
@@ -83,13 +93,13 @@ export default async function PersonProfilePage({ params }: { params: { id: stri
   const currentLocation = [person.currentCity, person.currentState, person.currentCountry]
     .filter(Boolean)
     .join(", ");
+  const genLabel = socialGeneration(person.dateOfBirth);
 
   // Anything that would show up in the Details card. If none of these
   // are set we skip the card entirely rather than render an empty shell.
   const hasAnyDetail = !!(
     person.gender ||
     person.birthOrder ||
-    person.familySide ||
     person.occupation ||
     person.education ||
     person.religion ||
@@ -117,11 +127,16 @@ export default async function PersonProfilePage({ params }: { params: { id: stri
             {person.maidenName && <p className="text-sm text-gray-500">nee {person.maidenName}</p>}
             {person.nickname && <p className="text-sm text-gray-500">&quot;{person.nickname}&quot;</p>}
             <p className="text-gray-600 mt-1">{dates}</p>
-            {person.generation !== null ? (
-              <span className="mt-2 inline-block text-xs bg-amber-50 text-amber-700 px-3 py-1 rounded-full border border-amber-200">Generation {person.generation}</span>
-            ) : (
-              <span className="mt-2 inline-block text-xs bg-yellow-50 text-yellow-600 px-3 py-1 rounded-full border border-yellow-200">Not yet linked to family tree</span>
-            )}
+            <div className="flex flex-wrap justify-center gap-2 mt-2">
+              {person.generation !== null ? (
+                <span className="inline-block text-xs bg-amber-50 text-amber-700 px-3 py-1 rounded-full border border-amber-200">Generation {person.generation}</span>
+              ) : (
+                <span className="inline-block text-xs bg-yellow-50 text-yellow-600 px-3 py-1 rounded-full border border-yellow-200">Not yet linked to family tree</span>
+              )}
+              {genLabel && (
+                <span className="inline-block text-xs bg-purple-50 text-purple-700 px-3 py-1 rounded-full border border-purple-200">{genLabel}</span>
+              )}
+            </div>
             {person.occupation && <p className="text-sm text-gray-500 mt-2">{person.occupation}</p>}
           </div>
           {person.biography && (
@@ -194,7 +209,6 @@ export default async function PersonProfilePage({ params }: { params: { id: stri
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
                 <Field label="Gender" value={genderLabel(person.gender)} />
                 <Field label="Birth order" value={person.birthOrder} />
-                <Field label="Family side" value={familySideLabel(person.familySide)} />
                 <Field label="Occupation" value={person.occupation} />
                 <Field label="Education" value={person.education} />
                 <Field label="Religion" value={person.religion} />

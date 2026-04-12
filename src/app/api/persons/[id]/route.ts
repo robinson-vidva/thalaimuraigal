@@ -43,7 +43,7 @@ export async function PUT(
       "email", "phone", "currentCity", "currentState", "currentCountry",
       "photoUrl", "birthLatitude", "birthLongitude",
       "currentLatitude", "currentLongitude",
-      "generation", "familySide", "birthOrder", "addedBy", "notes",
+      "generation", "birthOrder", "addedBy", "notes",
     ];
 
     const { fatherId, motherId, spouseId, marriageDate, childrenIds, ...rest } = body;
