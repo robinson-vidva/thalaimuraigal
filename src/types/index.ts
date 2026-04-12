@@ -2,7 +2,6 @@ export type Gender = "M" | "F";
 
 export type ParentType = "father" | "mother";
 
-export type FamilySide = "paternal" | "maternal" | "both";
 
 export type MediaType = "photo" | "document" | "video" | "audio" | "certificate";
 
@@ -42,7 +41,6 @@ export interface PersonFormData {
   birthLongitude?: number;
   currentLatitude?: number;
   currentLongitude?: number;
-  familySide?: FamilySide;
   birthOrder?: number;
   notes?: string;
   fatherId?: string;

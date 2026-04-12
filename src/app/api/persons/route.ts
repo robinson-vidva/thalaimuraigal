@@ -9,7 +9,6 @@ export async function GET(request: NextRequest) {
   const generation = searchParams.get("generation");
   const gender = searchParams.get("gender");
   const isLiving = searchParams.get("isLiving");
-  const familySide = searchParams.get("familySide");
 
   const where: Record<string, unknown> = {};
 
@@ -26,7 +25,6 @@ export async function GET(request: NextRequest) {
   if (isLiving !== null && isLiving !== undefined && isLiving !== "") {
     where.isLiving = isLiving === "true";
   }
-  if (familySide) where.familySide = familySide;
 
   const persons = await prisma.person.findMany({
     where,
