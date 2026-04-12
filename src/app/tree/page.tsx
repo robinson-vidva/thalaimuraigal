@@ -767,6 +767,29 @@ export default function TreePage() {
       .catch(() => setLoading(false));
   }, []);
 
+  // Seed focus state from ?focus=<id>&up=<n>&down=<n> in the URL. This
+  // is how the "View in Family Tree" button on the person profile page
+  // deep-links straight into a focused view without requiring the user
+  // to right-click the card once the tree has loaded. Runs once on
+  // mount and reads window.location directly so we don't need a
+  // Suspense boundary around useSearchParams.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const focusId = params.get("focus");
+    if (!focusId) return;
+    const clamp = (raw: string | null, fallback: number) => {
+      const n = raw === null ? NaN : Number(raw);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.max(0, Math.min(10, Math.floor(n)));
+    };
+    const up = clamp(params.get("up"), DEFAULT_FOCUS_UP);
+    const down = clamp(params.get("down"), DEFAULT_FOCUS_DOWN);
+    setFocus({ personId: focusId, up, down });
+    setFocusUp(up);
+    setFocusDown(down);
+  }, []);
+
   // Close the context menu on any mousedown outside of it, on scroll, or
   // when Escape is pressed. Uses a data attribute rather than a ref so the
   // check works even if the menu was re-rendered between event and handler.
