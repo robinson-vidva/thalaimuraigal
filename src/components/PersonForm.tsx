@@ -367,25 +367,27 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
             )}
           </div>
 
-          {/* Current Location */}
-          <div className="mt-5 pt-4 border-t border-gray-100">
-            <LocationSearch
-              label="Current Location"
-              placeholder="Search for current city or town..."
-              onSelect={(loc) => updateMultiple({
-                currentCity: loc.city,
-                currentState: loc.state,
-                currentCountry: loc.country,
-                currentLatitude: loc.latitude,
-                currentLongitude: loc.longitude,
-              })}
-            />
-            {(form.currentCity || form.currentState || form.currentCountry) && (
-              <div className="text-xs text-gray-500 bg-amber-50 border border-amber-100 p-2 rounded-md mt-2">
-                Current: {[form.currentCity, form.currentState, form.currentCountry].filter(Boolean).join(", ")}
-              </div>
-            )}
-          </div>
+          {/* Current Location — only relevant for living people */}
+          {(form.isLiving ?? true) && (
+            <div className="mt-5 pt-4 border-t border-gray-100">
+              <LocationSearch
+                label="Current Location"
+                placeholder="Search for current city or town..."
+                onSelect={(loc) => updateMultiple({
+                  currentCity: loc.city,
+                  currentState: loc.state,
+                  currentCountry: loc.country,
+                  currentLatitude: loc.latitude,
+                  currentLongitude: loc.longitude,
+                })}
+              />
+              {(form.currentCity || form.currentState || form.currentCountry) && (
+                <div className="text-xs text-gray-500 bg-amber-50 border border-amber-100 p-2 rounded-md mt-2">
+                  Current: {[form.currentCity, form.currentState, form.currentCountry].filter(Boolean).join(", ")}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
