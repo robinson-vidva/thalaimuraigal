@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Spinner from "@/components/Spinner";
 
 interface CalendarEvent {
   type: "birthday" | "anniversary" | "remembrance";
@@ -126,7 +127,7 @@ export default function CalendarPage() {
   const selectedDayEvents = selectedDay ? eventsOnDay(selectedDay) : [];
 
   if (loading) {
-    return <div className="text-center py-16"><p className="text-gray-500">Loading calendar...</p></div>;
+    return <Spinner label="Loading calendar..." />;
   }
 
   return (

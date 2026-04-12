@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import Spinner from "@/components/Spinner";
 
 // ── Data shape (mirrors /api/tree) ──
 interface TreePerson {
@@ -1173,11 +1174,7 @@ export default function TreePage() {
   }, []);
 
   if (loading) {
-    return (
-      <div className="text-center py-16">
-        <p className="text-gray-500">Loading family tree...</p>
-      </div>
-    );
+    return <Spinner label="Loading family tree..." />;
   }
 
   // Strip hidden people and anything outside the active focus bloodline,

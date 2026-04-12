@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import Spinner from "@/components/Spinner";
 
 const MapWrapper = dynamic(() => import("@/components/MapWrapper"), {
   ssr: false,
-  loading: () => <div className="h-full flex items-center justify-center text-gray-400">Loading map...</div>,
+  loading: () => <div className="h-full flex items-center justify-center"><div className="w-8 h-8 border-4 border-amber-200 border-t-amber-700 rounded-full animate-spin" /></div>,
 });
 
 interface PersonLocation {
@@ -54,11 +55,7 @@ export default function MapPage() {
     .filter(Boolean) as { id: string; firstName: string; lastName: string | null; dateOfBirth: string | null; lat: number; lng: number; place: string | null }[];
 
   if (loading) {
-    return (
-      <div className="text-center py-16">
-        <p className="text-gray-500">Loading map...</p>
-      </div>
-    );
+    return <Spinner label="Loading map..." />;
   }
 
   // Default to a world-centred view when no markers exist, so the user

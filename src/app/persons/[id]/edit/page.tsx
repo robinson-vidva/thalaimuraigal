@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import PersonForm from "@/components/PersonForm";
+import Spinner from "@/components/Spinner";
 import type { PersonFormData } from "@/types";
 
 export default function EditPersonPage() {
@@ -51,7 +52,7 @@ export default function EditPersonPage() {
       });
   }, [id]);
 
-  if (loading) return <p className="text-gray-500">Loading...</p>;
+  if (loading) return <Spinner label="Loading profile..." />;
   if (!data) return <p className="text-red-500">Person not found.</p>;
 
   return (
