@@ -36,7 +36,7 @@ export default function MapWrapper({ markers, center }: MapWrapperProps) {
   return (
     <MapContainer
       center={center}
-      zoom={5}
+      zoom={markers.length > 0 ? 5 : 3}
       style={{ height: "100%", width: "100%" }}
     >
       <TileLayer

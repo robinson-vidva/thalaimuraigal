@@ -115,7 +115,7 @@ export function validatePartialDate(
   // re-emit these as YYYY-MMM-DD the next time the record is saved.
   const match = trimmed.match(FULL_NUMERIC_DATE);
   if (!match) {
-    return `${fieldLabel}: use YYYY or YYYY-MM-DD (got "${trimmed}")`;
+    return `${fieldLabel}: use a full date (e.g. 1985-Apr-08) or month and day only (e.g. Apr-08). Got "${trimmed}"`;
   }
 
   const year = parseInt(match[1], 10);

@@ -71,24 +71,26 @@ export default async function Home() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[50vh] text-center">
-      <h1 className="text-5xl font-bold text-amber-900 mb-2">தலைமுறைகள்</h1>
-      <h2 className="text-2xl text-amber-700 mb-6">Thalaimuraigal</h2>
-      <p className="text-gray-600 max-w-lg mb-8">
+      <h1 className="text-5xl sm:text-6xl font-bold text-amber-900 mb-2 tracking-tight">தலைமுறைகள்</h1>
+      <h2 className="text-xl sm:text-2xl text-amber-700 mb-6 font-light tracking-wide">Thalaimuraigal</h2>
+      <p className="text-gray-500 max-w-lg mb-10 leading-relaxed">
         Preserving family history across generations. Explore your family tree,
         discover relationships, and keep the stories of your ancestors alive.
       </p>
-      <div className="flex gap-4 mb-12">
-        <Link href="/persons" className="bg-amber-700 text-white px-6 py-3 rounded-lg hover:bg-amber-800 font-medium transition-colors">View Family Members</Link>
-        <Link href="/persons/new" className="border-2 border-amber-700 text-amber-700 px-6 py-3 rounded-lg hover:bg-amber-100 font-medium transition-colors">Add a Member</Link>
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-12">
+        <Link href="/persons" className="bg-amber-700 text-white px-8 py-3 rounded-lg hover:bg-amber-800 font-semibold shadow-sm transition-all hover:shadow-md">View Family Members</Link>
+        <Link href="/tree" className="bg-white text-amber-700 border border-amber-300 px-8 py-3 rounded-lg hover:bg-amber-50 font-semibold shadow-sm transition-all hover:shadow-md">View Family Tree</Link>
+        <Link href="/persons/new" className="text-amber-700 px-8 py-3 rounded-lg hover:bg-amber-100 font-medium transition-colors">+ Add a Member</Link>
       </div>
 
       {/* Upcoming events */}
-      {events.length > 0 && (
-        <div className="w-full max-w-lg text-left">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-700">Upcoming This Week</h3>
-            <Link href="/calendar" className="text-xs text-amber-600 hover:underline">View calendar &rarr;</Link>
-          </div>
+      <div className="w-full max-w-lg text-left">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-700">Upcoming This Week</h3>
+          <Link href="/calendar" className="text-xs text-amber-600 hover:underline">View calendar &rarr;</Link>
+        </div>
+      {events.length > 0 ? (
+        <div>
           <div className="space-y-2">
             {events.slice(0, 5).map((e, i) => (
               <Link
@@ -105,7 +107,10 @@ export default async function Home() {
             ))}
           </div>
         </div>
+      ) : (
+        <p className="text-sm text-gray-400 italic">No upcoming birthdays, anniversaries, or remembrances this week. <Link href="/calendar" className="text-amber-600 hover:underline">View the full calendar</Link>.</p>
       )}
+      </div>
     </div>
   );
 }

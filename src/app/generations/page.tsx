@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { formatDateHuman } from "@/lib/format-date";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -95,7 +96,7 @@ export default async function GenerationsPage() {
                     </span>
                     {p.dateOfBirth && (
                       <span className="text-gray-400 text-xs">
-                        b.{p.dateOfBirth}
+                        b. {formatDateHuman(p.dateOfBirth)}
                       </span>
                     )}
                     {!p.isLiving && (
