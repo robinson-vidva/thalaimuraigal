@@ -742,6 +742,12 @@ export default function TreePage() {
   // rendered (plus their immediate spouses). Orthogonal to hiddenIds,
   // so the user can still hide individual people within a focused view.
   const [focus, setFocus] = useState<FocusState | null>(null);
+  // Fullscreen mode — expands the tree canvas to fill the entire browser
+  // window, hiding the navbar, header, and footer. Uses the native
+  // Fullscreen API on the wrapping div so the browser handles the chrome
+  // toggle and Escape-to-exit automatically.
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const fullscreenRef = useRef<HTMLDivElement>(null);
   // Form values for the focus sub-panel in the context menu. Persisted
   // at the page level so they survive between menu openings — set ±1
   // once and every subsequent right-click defaults to the same range.
@@ -1143,13 +1149,28 @@ export default function TreePage() {
 
   const zoomIn = () => setZoom((z) => Math.min(3, z + 0.2));
   const zoomOut = () => setZoom((z) => Math.max(0.2, z - 0.2));
-  // Reset snaps zoom back to DEFAULT_ZOOM and re-centers the pan. No
-  // auto-fit — the user likes the default 180% level and wants the tree
-  // to stay at that zoom regardless of how many people are visible.
   const resetView = () => {
     setZoom(DEFAULT_ZOOM);
     setPan({ x: 0, y: 0 });
   };
+
+  const toggleFullscreen = useCallback(() => {
+    const el = fullscreenRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, []);
+
+  // Sync React state when the user exits fullscreen via Escape or the
+  // browser's own UI, not just via our toggle button.
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
 
   if (loading) {
     return (
@@ -1427,14 +1448,14 @@ export default function TreePage() {
           </ul>
         </div>
       )}
-      <div className="relative">
+      <div ref={fullscreenRef} className={`relative ${isFullscreen ? "bg-gradient-to-b from-amber-50 to-orange-50/30" : ""}`}>
         <div
           ref={containerRef}
-          className="rounded-xl shadow-lg border border-amber-200 overflow-hidden select-none flex items-center justify-center"
+          className={`shadow-lg border border-amber-200 overflow-hidden select-none flex items-center justify-center ${isFullscreen ? "rounded-none" : "rounded-xl"}`}
           style={{
             width: "100%",
-            height: "min(75vh, calc(100dvh - 180px))",
-            minHeight: "400px",
+            height: isFullscreen ? "100vh" : "min(75vh, calc(100dvh - 180px))",
+            minHeight: isFullscreen ? undefined : "400px",
             background:
               "linear-gradient(180deg, #fffbeb 0%, #ffffff 50%, #fefce8 100%)",
             cursor: dragging ? "grabbing" : "grab",
@@ -1590,8 +1611,23 @@ export default function TreePage() {
           </svg>
         </div>
 
-        {/* Zoom controls */}
+        {/* Zoom + fullscreen controls */}
         <div className="absolute bottom-4 right-4 flex flex-col gap-1.5">
+          <button
+            onClick={toggleFullscreen}
+            className="w-9 h-9 bg-white border border-amber-300 rounded-lg shadow-md text-amber-800 hover:bg-amber-50 transition-colors flex items-center justify-center"
+            title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+          >
+            {isFullscreen ? (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9L4 4m0 0v5m0-5h5m6 6l5 5m0 0v-5m0 5h-5M9 15l-5 5m0 0h5m-5 0v-5m11-6l5-5m0 0h-5m5 0v5" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0 0l-5-5m-7 14H4m0 0v-4m0 4l5-5m7 5h4m0 0v-4m0 4l-5-5" />
+              </svg>
+            )}
+          </button>
           <button
             onClick={zoomIn}
             className="w-9 h-9 bg-white border border-amber-300 rounded-lg shadow-md text-amber-800 font-bold text-lg hover:bg-amber-50 transition-colors flex items-center justify-center"
