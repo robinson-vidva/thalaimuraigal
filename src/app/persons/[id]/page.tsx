@@ -130,9 +130,17 @@ export default async function PersonProfilePage({ params }: { params: { id: stri
               <p className="text-sm text-gray-700 whitespace-pre-wrap">{person.biography}</p>
             </div>
           )}
-          <div className="mt-4 pt-4 border-t border-gray-100 flex justify-center gap-4">
-            <Link href={`/persons/${id}/edit`} className="text-amber-700 hover:underline text-sm font-medium">Edit Profile</Link>
-            <DeletePersonButton personId={id} personName={fullName} />
+          <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+            <Link
+              href={`/tree?focus=${id}&up=2&down=2`}
+              className="block w-full text-center bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md hover:bg-amber-800 transition-colors"
+            >
+              View in Family Tree
+            </Link>
+            <div className="flex justify-center gap-4">
+              <Link href={`/persons/${id}/edit`} className="text-amber-700 hover:underline text-sm font-medium">Edit Profile</Link>
+              <DeletePersonButton personId={id} personName={fullName} />
+            </div>
           </div>
         </div>
         <div className="md:col-span-2 space-y-4">
