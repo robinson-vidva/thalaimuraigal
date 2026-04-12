@@ -61,23 +61,14 @@ export default function MapPage() {
     );
   }
 
-  if (markersData.length === 0) {
-    return (
-      <div className="text-center py-16">
-        <h1 className="text-2xl font-bold text-amber-900 mb-4">Family Map</h1>
-        <p className="text-gray-500 mb-2">No location data available yet.</p>
-        <p className="text-gray-400 text-sm">
-          Add or edit a family member and use the location search to set their
-          birth or current location. They will appear on the map automatically.
-        </p>
-      </div>
-    );
-  }
-
-  const center: [number, number] = [
-    markersData.reduce((sum, m) => sum + m.lat, 0) / markersData.length,
-    markersData.reduce((sum, m) => sum + m.lng, 0) / markersData.length,
-  ];
+  // Default to a world-centred view when no markers exist, so the user
+  // sees a real map (not an empty placeholder) and can explore freely.
+  const center: [number, number] = markersData.length > 0
+    ? [
+        markersData.reduce((sum, m) => sum + m.lat, 0) / markersData.length,
+        markersData.reduce((sum, m) => sum + m.lng, 0) / markersData.length,
+      ]
+    : [20, 78]; // India-centred world view as a sensible family-tree default
 
   return (
     <div>
@@ -107,10 +98,20 @@ export default function MapPage() {
         </div>
       </div>
       <div
-        className="rounded-lg shadow-md overflow-hidden border border-amber-100"
+        className="relative rounded-lg shadow-md overflow-hidden border border-amber-100"
         style={{ height: "min(70vh, 500px)" }}
       >
         <MapWrapper markers={markersData} center={center} />
+        {markersData.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="bg-white/90 border border-amber-200 rounded-lg px-6 py-4 text-center shadow-md pointer-events-auto">
+              <p className="text-sm font-medium text-amber-900 mb-1">No location data yet</p>
+              <p className="text-xs text-gray-500">
+                Add or edit a family member and search for their birth or current location.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

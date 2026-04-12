@@ -28,19 +28,20 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="bg-amber-800 text-white shadow-lg">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
-          <Link href="/" className="text-xl font-bold tracking-wide">
-            தலைமுறைகள்
-            <span className="text-amber-200 text-sm ml-2 font-normal">Thalaimuraigal</span>
+    <nav className="bg-amber-900 text-white shadow-lg border-b-2 border-amber-600/30">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-14">
+          <Link href="/" className="text-lg font-bold tracking-wide flex items-baseline gap-2">
+            <span>தலைமுறைகள்</span>
+            <span className="text-amber-300/80 text-xs font-normal hidden sm:inline">Thalaimuraigal</span>
           </Link>
           {/* Desktop nav */}
-          <div className="hidden md:flex items-center space-x-1">
+          <div className="hidden md:flex items-center space-x-0.5">
             {navLinks.map((link) => (
-              <Link key={link.href} href={link.href} className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${pathname === link.href ? "bg-amber-900 text-amber-100" : "text-amber-100 hover:bg-amber-700"}`}>{link.label}</Link>
+              <Link key={link.href} href={link.href} className={`px-3 py-1.5 rounded-md text-xs font-medium tracking-wide uppercase transition-colors ${pathname === link.href ? "bg-amber-700/60 text-white" : "text-amber-200 hover:bg-amber-800 hover:text-white"}`}>{link.label}</Link>
             ))}
-            <button onClick={handleLogout} className="ml-2 px-3 py-2 rounded-md text-sm font-medium text-amber-200 hover:bg-amber-700 transition-colors">Logout</button>
+            <div className="w-px h-5 bg-amber-700 mx-2" />
+            <button onClick={handleLogout} className="px-3 py-1.5 rounded-md text-xs font-medium text-amber-300/70 hover:bg-amber-800 hover:text-white transition-colors">Logout</button>
           </div>
           {/* Hamburger button */}
           <button onClick={() => setMobileOpen(!mobileOpen)} className="md:hidden p-2 rounded-md hover:bg-amber-700 transition-colors" aria-label="Toggle menu">

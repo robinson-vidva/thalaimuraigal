@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { formatDateHuman } from "@/lib/format-date";
 
 interface Person {
   id: string;
@@ -123,8 +124,8 @@ export default function PersonsPage() {
                     <td className="px-4 py-3 font-medium text-amber-900">{p.firstName} {p.lastName ?? ""}</td>
                     <td className="px-4 py-3">{p.generation !== null ? p.generation : <span className="text-yellow-600 text-xs">-</span>}</td>
                     <td className="px-4 py-3">{p.gender ?? "-"}</td>
-                    <td className="px-4 py-3">{p.dateOfBirth ?? "-"}</td>
-                    <td className="px-4 py-3">{p.isLiving ? <span className="text-green-600">Living</span> : <span className="text-gray-500">{p.dateOfDeath ?? ""} {"\uD83D\uDD4A\uFE0F"}</span>}</td>
+                    <td className="px-4 py-3">{formatDateHuman(p.dateOfBirth) ?? "-"}</td>
+                    <td className="px-4 py-3">{p.isLiving ? <span className="text-green-600">Living</span> : <span className="text-gray-500">{formatDateHuman(p.dateOfDeath) ?? ""} {"\uD83D\uDD4A\uFE0F"}</span>}</td>
                     <td className="px-4 py-3">{getParentName(p, "father")}</td>
                     <td className="px-4 py-3">{getParentName(p, "mother")}</td>
                     <td className="px-4 py-3">{getSpouseName(p)}</td>

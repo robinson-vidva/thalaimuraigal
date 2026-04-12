@@ -10,11 +10,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className="min-h-screen flex flex-col bg-amber-50 font-sans">
+      <body className="min-h-screen flex flex-col bg-gradient-to-b from-amber-50 to-orange-50/30">
         <Navbar />
-        <main className="flex-grow max-w-7xl mx-auto w-full px-4 py-8">{children}</main>
-        <footer className="bg-amber-800 text-amber-200 text-center text-sm py-4">
-          Thalaimuraigal - Preserving family history across generations
+        <main className="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">{children}</main>
+        <footer className="bg-amber-900 text-amber-300/80 text-center text-xs py-5 tracking-wide">
+          <span className="font-semibold text-amber-200">Thalaimuraigal</span> &mdash; Preserving family history across generations
         </footer>
       </body>
     </html>
