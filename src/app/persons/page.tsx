@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { formatDateHuman } from "@/lib/format-date";
+import Spinner from "@/components/Spinner";
 
 interface Person {
   id: string;
@@ -109,7 +110,7 @@ export default function PersonsPage() {
           {generations.map((g) => (<option key={g} value={g}>Generation {g}</option>))}
         </select>
       </div>
-      {loading ? (<p className="text-gray-500">Loading...</p>) : persons.length === 0 ? (
+      {loading ? (<Spinner label="Loading family members..." />) : persons.length === 0 ? (
         <div className="text-center py-12 text-gray-500"><p className="mb-2">No family members found.</p><Link href="/persons/new" className="text-amber-700 underline">Add the first member</Link></div>
       ) : (
         <>
