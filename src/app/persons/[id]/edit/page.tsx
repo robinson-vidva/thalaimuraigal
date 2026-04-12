@@ -56,6 +56,9 @@ export default function EditPersonPage() {
 
   return (
     <div>
+      <div className="mb-6">
+        <button onClick={() => window.history.back()} className="text-amber-700 hover:underline text-sm">&larr; Back to Profile</button>
+      </div>
       <h1 className="text-2xl font-bold text-amber-900 mb-6">Edit: {data.firstName} {data.lastName ?? ""}</h1>
       <PersonForm initialData={data} isEdit />
     </div>
