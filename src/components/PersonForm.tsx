@@ -245,133 +245,154 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
     }
   };
 
+  // Shared Tailwind classes so the form inputs look consistent without
+  // repeating the string 20 times. The label + input patterns are the
+  // same across every section.
+  const inputCls = "w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400 transition-colors";
+  const labelCls = "block text-sm font-medium text-gray-700 mb-1";
+
   return (
-    <form onSubmit={handleSubmit} className="max-w-3xl space-y-8">
-      {error && <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm">{error}</div>}
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm flex items-start gap-2">
+          <span className="font-medium shrink-0">Error:</span>
+          <span>{error}</span>
+        </div>
+      )}
 
-      {/* ── Section 1: Personal Details ── */}
-      <fieldset className="border border-gray-200 rounded-lg p-5">
-        <legend className="text-sm font-semibold text-gray-700 px-2">Personal Details</legend>
-        <p className="text-xs text-gray-400 mb-4 -mt-1">Name, identity, and background</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">First Name <span className="text-red-400">*</span></label>
-            <input required type="text" value={form.firstName} onChange={(e) => update("firstName", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+      {/* ═══════════════════════════════════════════════════════════════
+         Two-column layout on desktop. The left column holds "who is
+         this person" (name, identity, bio). The right holds "when and
+         where" (birth, death, location). Below both is a full-width
+         Family Connections section. This halves the vertical scroll on
+         wide screens and keeps related fields close to each other.
+         ═══════════════════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* ── Left column: Personal Details ── */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <h2 className="text-lg font-bold text-amber-900 mb-1">Personal Details</h2>
+          <p className="text-xs text-gray-400 mb-5">Name, identity, and background</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>First Name <span className="text-red-400">*</span></label>
+              <input required type="text" value={form.firstName} onChange={(e) => update("firstName", e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Last Name</label>
+              <input type="text" value={form.lastName ?? ""} onChange={(e) => update("lastName", e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Nickname</label>
+              <input type="text" value={form.nickname ?? ""} onChange={(e) => update("nickname", e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Maiden Name</label>
+              <input type="text" value={form.maidenName ?? ""} onChange={(e) => update("maidenName", e.target.value)} className={inputCls} placeholder="Surname before marriage" />
+            </div>
+            <div>
+              <label className={labelCls}>Gender</label>
+              <select value={form.gender ?? ""} onChange={(e) => update("gender", (e.target.value || undefined) as Gender | undefined)} className={inputCls}>
+                <option value="">Select...</option>
+                <option value="M">Male</option>
+                <option value="F">Female</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Occupation</label>
+              <input type="text" value={form.occupation ?? ""} onChange={(e) => update("occupation", e.target.value)} className={inputCls} />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-            <input type="text" value={form.lastName ?? ""} onChange={(e) => update("lastName", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+          <div className="mt-4">
+            <label className={labelCls}>Biography</label>
+            <textarea rows={2} value={form.biography ?? ""} onChange={(e) => update("biography", e.target.value)} className={inputCls} placeholder="A short description about this person..." />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nickname</label>
-            <input type="text" value={form.nickname ?? ""} onChange={(e) => update("nickname", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Maiden Name</label>
-            <input type="text" value={form.maidenName ?? ""} onChange={(e) => update("maidenName", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" placeholder="Original surname before marriage" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
-            <select value={form.gender ?? ""} onChange={(e) => update("gender", (e.target.value || undefined) as Gender | undefined)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500">
-              <option value="">Select...</option>
-              <option value="M">Male</option>
-              <option value="F">Female</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Occupation</label>
-            <input type="text" value={form.occupation ?? ""} onChange={(e) => update("occupation", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
+          <div className="mt-3">
+            <label className={labelCls}>Notes</label>
+            <textarea rows={2} value={form.notes ?? ""} onChange={(e) => update("notes", e.target.value)} className={inputCls} placeholder="Any additional notes, stories, or memories..." />
           </div>
         </div>
-        <div className="mt-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Biography</label>
-          <textarea rows={3} value={form.biography ?? ""} onChange={(e) => update("biography", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" placeholder="A short description about this person..." />
-        </div>
-        <div className="mt-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-          <textarea rows={2} value={form.notes ?? ""} onChange={(e) => update("notes", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" placeholder="Any additional notes, stories, or memories..." />
-        </div>
-      </fieldset>
 
-      {/* ── Section 2: Birth & Life ── */}
-      <fieldset className="border border-gray-200 rounded-lg p-5">
-        <legend className="text-sm font-semibold text-gray-700 px-2">Birth & Life</legend>
-        <p className="text-xs text-gray-400 mb-4 -mt-1">Timeline, locations, and life status</p>
+        {/* ── Right column: Birth & Life ── */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <h2 className="text-lg font-bold text-amber-900 mb-1">Birth &amp; Life</h2>
+          <p className="text-xs text-gray-400 mb-5">Timeline, locations, and life status</p>
 
-        {/* Birth row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <PartialDatePicker
-              label="Date of Birth"
-              value={form.dateOfBirth ?? ""}
-              onChange={(v) => update("dateOfBirth", v)}
-              hint="Pick 'Month & day only' if the year is unknown."
-            />
+          {/* Birth row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <PartialDatePicker
+                label="Date of Birth"
+                value={form.dateOfBirth ?? ""}
+                onChange={(v) => update("dateOfBirth", v)}
+                hint="Pick 'Month & day only' if the year is unknown."
+              />
+            </div>
+            <div>
+              <LocationSearch
+                label="Place of Birth"
+                placeholder="Search for birth city or town..."
+                onSelect={(loc) => updateMultiple({
+                  placeOfBirth: loc.displayName,
+                  birthLatitude: loc.latitude,
+                  birthLongitude: loc.longitude,
+                })}
+              />
+              {form.placeOfBirth && (
+                <p className="text-xs text-gray-500 mt-1 truncate" title={form.placeOfBirth}>Selected: {form.placeOfBirth}</p>
+              )}
+            </div>
           </div>
-          <div>
+
+          {/* Living / Death section */}
+          <div className="mt-5 pt-4 border-t border-gray-100">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
+              <input type="checkbox" checked={form.isLiving ?? true} onChange={(e) => update("isLiving", e.target.checked)} className="rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+              Currently living
+            </label>
+            {!form.isLiving && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3 pl-4 border-l-2 border-amber-200">
+                <div>
+                  <PartialDatePicker
+                    label="Date of Death"
+                    value={form.dateOfDeath ?? ""}
+                    onChange={(v) => update("dateOfDeath", v)}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Place of Death</label>
+                  <input type="text" value={form.placeOfDeath ?? ""} onChange={(e) => update("placeOfDeath", e.target.value)} className={inputCls} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Current Location */}
+          <div className="mt-5 pt-4 border-t border-gray-100">
             <LocationSearch
-              label="Place of Birth"
-              placeholder="Search for birth city or town..."
+              label="Current Location"
+              placeholder="Search for current city or town..."
               onSelect={(loc) => updateMultiple({
-                placeOfBirth: loc.displayName,
-                birthLatitude: loc.latitude,
-                birthLongitude: loc.longitude,
+                currentCity: loc.city,
+                currentState: loc.state,
+                currentCountry: loc.country,
+                currentLatitude: loc.latitude,
+                currentLongitude: loc.longitude,
               })}
             />
-            {form.placeOfBirth && (
-              <p className="text-xs text-gray-500 mt-1 truncate" title={form.placeOfBirth}>Selected: {form.placeOfBirth}</p>
+            {(form.currentCity || form.currentState || form.currentCountry) && (
+              <div className="text-xs text-gray-500 bg-amber-50 border border-amber-100 p-2 rounded-md mt-2">
+                Current: {[form.currentCity, form.currentState, form.currentCountry].filter(Boolean).join(", ")}
+              </div>
             )}
           </div>
         </div>
+      </div>
 
-        {/* Living / Death section */}
-        <div className="mt-5 pt-4 border-t border-gray-100">
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
-            <input type="checkbox" checked={form.isLiving ?? true} onChange={(e) => update("isLiving", e.target.checked)} className="rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
-            Currently living
-          </label>
-          {!form.isLiving && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3 pl-6 border-l-2 border-gray-200">
-              <div>
-                <PartialDatePicker
-                  label="Date of Death"
-                  value={form.dateOfDeath ?? ""}
-                  onChange={(v) => update("dateOfDeath", v)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Place of Death</label>
-                <input type="text" value={form.placeOfDeath ?? ""} onChange={(e) => update("placeOfDeath", e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500" />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Current Location */}
-        <div className="mt-5 pt-4 border-t border-gray-100">
-          <LocationSearch
-            label="Current Location"
-            placeholder="Search for current city or town..."
-            onSelect={(loc) => updateMultiple({
-              currentCity: loc.city,
-              currentState: loc.state,
-              currentCountry: loc.country,
-              currentLatitude: loc.latitude,
-              currentLongitude: loc.longitude,
-            })}
-          />
-          {(form.currentCity || form.currentState || form.currentCountry) && (
-            <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded mt-2">
-              Current: {[form.currentCity, form.currentState, form.currentCountry].filter(Boolean).join(", ")}
-            </div>
-          )}
-        </div>
-      </fieldset>
-
-      {/* ── Section 3: Family Connections ── */}
-      <fieldset className="border border-gray-200 rounded-lg p-5">
-        <legend className="text-sm font-semibold text-gray-700 px-2">Family Connections</legend>
-        <p className="text-xs text-gray-400 mb-4 -mt-1">
+      {/* ── Full-width: Family Connections ── */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-lg font-bold text-amber-900 mb-1">Family Connections</h2>
+        <p className="text-xs text-gray-400 mb-5">
           Add relationships one at a time. Each link automatically shows up on the other person&rsquo;s profile too &mdash; you only need to record it once.
         </p>
 
@@ -508,23 +529,24 @@ export default function PersonForm({ initialData, isEdit }: PersonFormProps) {
 
         {/* Birth Order */}
         <div className="mt-5 pt-4 border-t border-gray-100">
-          <div className="sm:w-1/2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Birth Order</label>
+          <div className="sm:w-1/3">
+            <label className={labelCls}>Birth Order</label>
             <input
               type="number"
               min="1"
               value={form.birthOrder ?? ""}
               onChange={(e) => update("birthOrder", e.target.value ? parseInt(e.target.value) : undefined)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
+              className={inputCls}
               placeholder="e.g. 1 for eldest"
             />
           </div>
         </div>
-      </fieldset>
+      </div>
 
-      {/* Submit */}
-      <div className="flex items-center gap-4">
-        <button type="submit" disabled={loading} className="bg-amber-700 text-white px-8 py-2.5 rounded-md hover:bg-amber-800 disabled:opacity-50 font-medium transition-colors">
+      {/* Submit bar — slightly raised and visually separated so the
+          primary action is always obvious even on long forms. */}
+      <div className="flex items-center gap-4 pt-2">
+        <button type="submit" disabled={loading} className="bg-amber-700 text-white px-10 py-2.5 rounded-lg hover:bg-amber-800 disabled:opacity-50 font-semibold shadow-sm transition-colors">
           {loading ? "Saving..." : isEdit ? "Update Member" : "Add Member"}
         </button>
         <button type="button" onClick={() => router.back()} className="text-gray-500 hover:text-gray-700 text-sm font-medium transition-colors">
