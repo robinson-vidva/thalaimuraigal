@@ -1661,12 +1661,11 @@ export default function TreePage() {
         <div className="absolute bottom-4 left-4 text-xs text-gray-400 bg-white/80 px-2 py-1 rounded-md border border-gray-200">
           {Math.round(zoom * 100)}%
         </div>
-      </div>
 
-      {/* Context menu. Rendered as `position: fixed` in viewport coords so
-          it lands where the user right-clicked regardless of page scroll or
-          tree pan/zoom. Dismissed by the mousedown / Escape listeners in
-          the effect above. */}
+      {/* Context menu. Must live INSIDE the fullscreenRef div so it's
+          visible in fullscreen mode. Uses position:fixed relative to
+          the fullscreen container (which becomes the viewport in
+          fullscreen). */}
       {contextMenu && contextMenuPerson && (
         <div
           data-tree-context-menu
@@ -1781,6 +1780,7 @@ export default function TreePage() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
